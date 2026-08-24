@@ -8,6 +8,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&family=Space+Grotesk:wght@500;600;700;800;900&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+  <script src="./supabase-config.js"></script>
   <style>
     /* ===== ОСНОВНЫЕ СТИЛИ (без изменений) ===== */
     :root {
@@ -2213,10 +2214,90 @@
   </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="./supabase-config.js"></script>
 <script>
 (function() {
+  // ===== SUPABASE STORAGE: ОБЩИЕ ЛОГОТИПЫ, АВАТАРЫ И ВИДЕО =====
+  const LTL_MEDIA_BUCKET = 'ltl-media';
+  function ltlSupabaseConfig() {
+    const url = (window.LTL_SUPABASE_URL || window.SUPABASE_URL || '').replace(/\/$/, '');
+    const key = window.LTL_SUPABASE_ANON_KEY || window.LTL_SUPABASE_PUBLISHABLE_KEY || window.SUPABASE_ANON_KEY || window.SUPABASE_PUBLISHABLE_KEY || '';
+    return { url, key };
+  }
+  function ltlHasSupabaseStorage() { const c = ltlSupabaseConfig(); return !!(c.url && c.key); }
+  function ltlSafeFileName(name) { return String(name || 'file').normalize('NFKD').replace(/[^a-zA-Z0-9._-]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 100) || 'file'; }
+  function ltlStoragePublicUrl(path) { const c = ltlSupabaseConfig(); return c.url + '/storage/v1/object/public/' + LTL_MEDIA_BUCKET + '/' + path.split('/').map(encodeURIComponent).join('/'); }
+  function ltlStoragePathFromUrl(url) {
+    try {
+      const marker = '/storage/v1/object/public/' + LTL_MEDIA_BUCKET + '/';
+      const i = String(url || '').indexOf(marker);
+      return i >= 0 ? decodeURIComponent(String(url).slice(i + marker.length)) : null;
+    } catch(e) { return null; }
+  }
+  async function ltlUploadMedia(file, folder) {
+    if (!ltlHasSupabaseStorage()) throw new Error('Supabase Storage не настроен. Проверьте URL и Publishable/anon key.');
+    if (!file) throw new Error('Файл не выбран.');
+    const c = ltlSupabaseConfig();
+    const path = folder + '/' + Date.now() + '-' + Math.random().toString(36).slice(2, 8) + '-' + ltlSafeFileName(file.name);
+    const res = await fetch(c.url + '/storage/v1/object/' + LTL_MEDIA_BUCKET + '/' + path.split('/').map(encodeURIComponent).join('/'), {
+      method: 'POST',
+      headers: { 'apikey': c.key, 'Authorization': 'Bearer ' + c.key, 'Content-Type': file.type || 'application/octet-stream', 'x-upsert': 'true', 'cache-control': '31536000' },
+      body: file
+    });
+    if (!res.ok) { let msg = ''; try { msg = await res.text(); } catch(_) {} throw new Error('Ошибка загрузки файла (' + res.status + '): ' + msg); }
+    return { path, url: ltlStoragePublicUrl(path), size: file.size, type: file.type || 'application/octet-stream', name: file.name };
+  }
+  async function ltlDeleteMediaUrl(url) {
+    const path = ltlStoragePathFromUrl(url);
+    if (!path || !ltlHasSupabaseStorage()) return;
+    const c = ltlSupabaseConfig();
+    try { await fetch(c.url + '/storage/v1/object/' + LTL_MEDIA_BUCKET + '/' + path.split('/').map(encodeURIComponent).join('/'), { method: 'DELETE', headers: { 'apikey': c.key, 'Authorization': 'Bearer ' + c.key } }); } catch(e) { console.warn('Не удалось удалить файл из Storage:', e); }
+  }
+  function ltlMediaSource(src) { return src || ''; }
+  async function ltlMigrateLegacyMedia() {
+    if (!ltlHasSupabaseStorage()) return;
+    try {
+      let changed = false;
+      const logo = localStorage.getItem('nexus_site_logo');
+      if (logo && logo.indexOf('data:') === 0) {
+        const m = logo.match(/^data:([^;]+);base64,(.+)$/);
+        if (m) {
+          const bin = atob(m[2]); const arr = new Uint8Array(bin.length); for (let i=0;i<bin.length;i++) arr[i]=bin.charCodeAt(i);
+          const blob = new Blob([arr], {type:m[1]}); const ext = (m[1].split('/')[1] || 'png').replace(/[^a-z0-9]/gi,'');
+          const uploaded = await ltlUploadMedia(new File([blob], 'site-logo.'+ext, {type:m[1]}), 'site');
+          localStorage.setItem('nexus_site_logo', uploaded.url); changed = true;
+        }
+      }
+      const teams = JSON.parse(localStorage.getItem('nexus_teams') || '[]');
+      let teamsChanged = false;
+      for (const team of teams) {
+        if (team && team.avatar && String(team.avatar).indexOf('data:') === 0) {
+          const m = String(team.avatar).match(/^data:([^;]+);base64,(.+)$/); if (!m) continue;
+          const bin = atob(m[2]); const arr = new Uint8Array(bin.length); for (let i=0;i<bin.length;i++) arr[i]=bin.charCodeAt(i);
+          const blob = new Blob([arr], {type:m[1]}); const ext=(m[1].split('/')[1]||'png').replace(/[^a-z0-9]/gi,'');
+          const uploaded=await ltlUploadMedia(new File([blob], 'team-logo.'+ext,{type:m[1]}), 'teams/'+ltlSafeFileName(team.id || team.name));
+          team.avatar=uploaded.url; teamsChanged=true;
+        }
+      }
+      if (teamsChanged) { localStorage.setItem('nexus_teams', JSON.stringify(teams)); changed=true; }
+      const highlights = JSON.parse(localStorage.getItem('nexus_highlights') || '{}');
+      let highlightsChanged=false;
+      for (const key of Object.keys(highlights)) {
+        const list = Array.isArray(highlights[key]) ? highlights[key] : [];
+        for (const h of list) {
+          if (h && h.video && String(h.video).indexOf('data:video/') === 0) {
+            const m=String(h.video).match(/^data:([^;]+);base64,(.+)$/); if (!m) continue;
+            const bin=atob(m[2]); const arr=new Uint8Array(bin.length); for (let i=0;i<bin.length;i++) arr[i]=bin.charCodeAt(i);
+            const blob=new Blob([arr],{type:m[1]}); const ext=(m[1].split('/')[1]||'mp4').replace(/[^a-z0-9]/gi,'');
+            const uploaded=await ltlUploadMedia(new File([blob], 'highlight.'+ext,{type:m[1]}), 'highlights/'+ltlSafeFileName(key));
+            h.video=uploaded.url; h.videoType=uploaded.type; h.videoSize=uploaded.size; highlightsChanged=true;
+          }
+        }
+      }
+      if (highlightsChanged) { localStorage.setItem('nexus_highlights', JSON.stringify(highlights)); changed=true; }
+      if (changed && typeof forceRenderAll === 'function') forceRenderAll();
+    } catch(e) { console.warn('Миграция старых медиа не завершена:', e); }
+  }
+
   // ===== КЛЮЧИ ХРАНЕНИЯ =====
   const STORAGE_KEYS = {
     USERS: 'nexus_users',
@@ -2246,117 +2327,37 @@
     FILES: 'nexus_files'
   };
 
-  // ===== ОБЩАЯ БАЗА SUPABASE + REALTIME =====
-  // Настрой SUPABASE_URL и SUPABASE_ANON_KEY в supabase-config.js.
-  const LTL_SUPABASE_URL = window.LTL_SUPABASE_URL || '';
-  const LTL_SUPABASE_ANON_KEY = window.LTL_SUPABASE_ANON_KEY || '';
-  let ltlSupabase = null;
-  let ltlBackendReady = false, ltlApplyingRemote = false;
-  let ltlRealtimeChannel = null;
-
-  function ltlIsSharedKey(key) {
-    return typeof key === 'string' && key.indexOf('nexus_') === 0 &&
-      !new Set([STORAGE_KEYS.SESSION, STORAGE_KEYS.THEME, STORAGE_KEYS.VIEW_MODE, STORAGE_KEYS.ONLINE]).has(key);
-  }
-  function ltlRenderAfterRemoteSync(key) {
-    try {
-      if (typeof forceRenderAll === 'function') forceRenderAll();
-      else if (typeof renderAll === 'function') renderAll();
-      if (key === STORAGE_KEYS.USERS && typeof renderRoleList === 'function') renderRoleList();
-      if (typeof updateTotalUsersCount === 'function') updateTotalUsersCount();
-    } catch(e) { console.warn('Realtime render error', e); }
-  }
-  function ltlApplyRemote(key, value, deleted=false) {
-    ltlApplyingRemote = true;
-    try {
-      if (deleted || value === null || typeof value === 'undefined') localStorage.removeItem(key);
-      else localStorage.setItem(key, typeof value === 'string' ? value : JSON.stringify(value));
-    } finally { ltlApplyingRemote = false; }
-    ltlRenderAfterRemoteSync(key);
-  }
-  function ltlEncodeValue(value) {
-    if (value === null || typeof value === 'undefined') return null;
-    if (typeof value === 'string') {
-      try { return JSON.parse(value); }
-      catch (_) { return { __ltlType: 'string', value }; }
-    }
-    return value;
-  }
-  function ltlDecodeValue(value) {
-    if (value && typeof value === 'object' && value.__ltlType === 'string') return value.value;
-    return typeof value === 'string' ? value : JSON.stringify(value);
-  }
-  async function ltlPushKey(key, value) {
-    if (!ltlBackendReady || ltlApplyingRemote || !ltlIsSharedKey(key)) return;
-    try {
-      const { error } = await ltlSupabase.from('ltl_state').upsert({
-        key, value_json: ltlEncodeValue(value), updated_at: new Date().toISOString()
-      }, { onConflict: 'key' });
-      if (error) throw error;
-    } catch(e) { console.warn('Supabase write failed:', key, e); }
-  }
-  try {
-    const _setItem = Storage.prototype.setItem, _removeItem = Storage.prototype.removeItem;
-    Storage.prototype.setItem = function(key,value){
-      _setItem.call(this,key,value);
-      if(this===window.localStorage && ltlIsSharedKey(key)) ltlPushKey(key,value);
-    };
-    Storage.prototype.removeItem = function(key){
-      _removeItem.call(this,key);
-      if(this===window.localStorage && ltlIsSharedKey(key)) ltlPushKey(key,null);
-    };
-  } catch(e) { console.warn('Storage sync hook unavailable',e); }
-
+  // ===== ОБЩИЙ BACKEND / REALTIME СИНХРОНИЗАЦИЯ =====
+  const LTL_BACKEND_URL = (window.LTL_BACKEND_URL || '').replace(/\/$/, '') || (location.protocol === 'http:' || location.protocol === 'https:' ? location.origin : 'http://localhost:8787');
+  const LTL_LOCAL_ONLY_KEYS = new Set([STORAGE_KEYS.SESSION, STORAGE_KEYS.THEME, STORAGE_KEYS.VIEW_MODE, STORAGE_KEYS.ONLINE]);
+  let ltlBackendReady = false, ltlApplyingRemote = false, ltlEventSource = null;
+  function ltlIsSharedKey(key) { return typeof key === 'string' && key.indexOf('nexus_') === 0 && !LTL_LOCAL_ONLY_KEYS.has(key); }
+  function ltlRenderAfterRemoteSync(key) { try { if (typeof forceRenderAll === 'function') forceRenderAll(); else if (typeof renderAll === 'function') renderAll(); if (key === STORAGE_KEYS.USERS && typeof renderRoleList === 'function') renderRoleList(); if (typeof updateTotalUsersCount === 'function') updateTotalUsersCount(); } catch(e) { console.warn('Realtime render error',e); } }
+  async function ltlPushKey(key,value) { if (!ltlIsSharedKey(key) || ltlApplyingRemote || !ltlBackendReady) return; try { await fetch(LTL_BACKEND_URL+'/api/state/'+encodeURIComponent(key),{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({value})}); } catch(e) { console.warn('Backend write failed:',key,e); } }
+  try { const _setItem=Storage.prototype.setItem, _removeItem=Storage.prototype.removeItem; Storage.prototype.setItem=function(key,value){ _setItem.call(this,key,value); if(this===window.localStorage&&ltlIsSharedKey(key)) ltlPushKey(key,value); }; Storage.prototype.removeItem=function(key){ _removeItem.call(this,key); if(this===window.localStorage&&ltlIsSharedKey(key)) ltlPushKey(key,null); }; } catch(e) { console.warn('Storage sync hook unavailable',e); }
   async function ltlBootstrapBackend() {
-    if (!LTL_SUPABASE_URL || !LTL_SUPABASE_ANON_KEY || !window.supabase?.createClient) {
-      console.warn('Supabase не настроен: заполните supabase-config.js. Сайт работает локально.');
-      return;
-    }
     try {
-      ltlSupabase = window.supabase.createClient(LTL_SUPABASE_URL, LTL_SUPABASE_ANON_KEY);
-      const { data: rows, error } = await ltlSupabase.from('ltl_state').select('key,value_json').order('key');
-      if (error) throw error;
-      const remote = {};
-      (rows || []).forEach(r => { if (ltlIsSharedKey(r.key)) remote[r.key] = r.value_json; });
-
-      const local = {};
-      for(let i=0;i<localStorage.length;i++) {
-        const k=localStorage.key(i);
-        if(ltlIsSharedKey(k)) local[k]=localStorage.getItem(k);
+      const r=await fetch(LTL_BACKEND_URL+'/api/state',{cache:'no-store'});
+      if(!r.ok) throw new Error('HTTP '+r.status);
+      const remote=await r.json();
+      const keys=Object.keys(remote||{}).filter(ltlIsSharedKey);
+      ltlApplyingRemote=true;
+      keys.forEach(k=>{const v=remote[k]; if(v===null||typeof v==='undefined') localStorage.removeItem(k); else localStorage.setItem(k,typeof v==='string'?v:JSON.stringify(v));});
+      const local={};
+      for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i); if(ltlIsSharedKey(k)) local[k]=localStorage.getItem(k);}
+      ltlApplyingRemote=false;
+      ltlBackendReady=true;
+      // Серверные значения имеют приоритет, но локальные ключи, которых ещё нет на сервере, отправляем тоже.
+      for(const k of Object.keys(local)){
+        if(!Object.prototype.hasOwnProperty.call(remote,k)){
+          await fetch(LTL_BACKEND_URL+'/api/state/'+encodeURIComponent(k),{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({value:local[k]})});
+        }
       }
-      ltlApplyingRemote = true;
-      Object.keys(remote).forEach(k => {
-        const v=remote[k];
-        if(v===null || typeof v==='undefined') localStorage.removeItem(k);
-        else localStorage.setItem(k, typeof v==='string' ? v : JSON.stringify(v));
-      });
-      ltlApplyingRemote = false;
-      ltlBackendReady = true;
-
-      // Ключи, которых ещё нет в базе, переносим туда. Ничего из localStorage не удаляем.
-      for(const k of Object.keys(local)) {
-        if(!Object.prototype.hasOwnProperty.call(remote,k)) await ltlPushKey(k,local[k]);
-      }
-
-      ltlRealtimeChannel = ltlSupabase.channel('ltl-shared-state', { config: { broadcast: { self: false } } })
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'ltl_state' }, payload => {
-          const row = payload.new || payload.old || {};
-          if (!row.key || !ltlIsSharedKey(row.key)) return;
-          if (payload.eventType === 'DELETE') ltlApplyRemote(row.key, null, true);
-          else ltlApplyRemote(row.key, ltlDecodeValue(row.value_json), false);
-        })
-        .subscribe(status => {
-          if(status === 'SUBSCRIBED') console.log('LTL Supabase realtime connected');
-        });
+      ltlConnectEvents();
       ltlRenderAfterRemoteSync();
-      updateOnlineCounter();
-      await ltlJoinPresence();
-      updateOnlineCounter();
-    } catch(e) {
-      ltlBackendReady = false;
-      console.error('Общая база недоступна:', e);
-    }
+    } catch(e) { ltlBackendReady=false; console.warn('Общий backend недоступен. Сайт продолжит работу локально:',e); }
   }
+  function ltlConnectEvents(){ if(ltlEventSource) return; try{ ltlEventSource=new EventSource(LTL_BACKEND_URL+'/api/events'); ltlEventSource.onmessage=function(ev){try{const m=JSON.parse(ev.data||'{}'); if(!m.key||!ltlIsSharedKey(m.key))return; ltlApplyingRemote=true; if(m.deleted)localStorage.removeItem(m.key); else localStorage.setItem(m.key,typeof m.value==='string'?m.value:JSON.stringify(m.value)); ltlApplyingRemote=false; ltlRenderAfterRemoteSync(m.key);}catch(e){console.warn('Realtime event error',e);}}; ltlEventSource.addEventListener('online',function(ev){try{const d=JSON.parse(ev.data||'{}'); document.getElementById('onlineCount').textContent=String(Math.max(0,Number(d.count)||0));}catch(e){}}); }catch(e){console.warn('SSE unavailable',e);} }
 
   const ROLES = { GUEST: 'guest', PLAYER: 'player', CAPTAIN: 'captain', ADMIN: 'admin', HEAD: 'head' };
   const ROLE_NAMES = { guest: 'Гость', player: 'Игрок', captain: 'Капитан', admin: 'Админ', head: 'Глава' };
@@ -2434,53 +2435,11 @@
     });
   }
 
-  // ===== ОБЩИЙ ОНЛАЙН SUPABASE PRESENCE =====
-  let ltlPresenceChannel = null;
-  let ltlClientId = sessionStorage.getItem('ltl_client_id');
+  // ===== ОНЛАЙН =====
+  let ltlClientId=sessionStorage.getItem('ltl_client_id');
   if(!ltlClientId){ltlClientId='c_'+Date.now()+'_'+Math.random().toString(36).slice(2);sessionStorage.setItem('ltl_client_id',ltlClientId);}
-  function ltlPresenceName(){ return String(currentUser || 'Гость').slice(0,80); }
-  function ltlRenderOnlineCount(count){ const el=document.getElementById('onlineCount'); if(el) el.textContent=String(Math.max(0,Number(count)||0)); }
-  async function ltlJoinPresence(){
-    if(!ltlBackendReady || !ltlSupabase || ltlPresenceChannel) return;
-    ltlPresenceChannel = ltlSupabase.channel('ltl-online', { config: { presence: { key: ltlClientId } } });
-    ltlPresenceChannel.on('presence', { event: 'sync' }, () => {
-      const state=ltlPresenceChannel.presenceState();
-      ltlRenderOnlineCount(Object.keys(state).length);
-    }).on('presence', { event: 'join' }, () => {
-      const state=ltlPresenceChannel.presenceState();
-      ltlRenderOnlineCount(Object.keys(state).length);
-    }).on('presence', { event: 'leave' }, () => {
-      const state=ltlPresenceChannel.presenceState();
-      ltlRenderOnlineCount(Object.keys(state).length);
-    });
-    await ltlPresenceChannel.subscribe(async status => {
-      if(status === 'SUBSCRIBED') {
-        await ltlPresenceChannel.track({ username: ltlPresenceName(), online_at: new Date().toISOString() });
-      }
-    });
-  }
-  async function updateOnlineCounter(){
-    if(ltlBackendReady && ltlPresenceChannel){
-      const state=ltlPresenceChannel.presenceState();
-      ltlRenderOnlineCount(Object.keys(state).length);
-      return;
-    }
-    let data=[];try{data=JSON.parse(localStorage.getItem(STORAGE_KEYS.ONLINE)||'[]');}catch(e){}
-    const now=Date.now();
-    ltlRenderOnlineCount(data.filter(u=>now-u.lastSeen<60000).length);
-  }
-  async function updateUserOnline(){
-    if(ltlBackendReady && ltlPresenceChannel){
-      try { await ltlPresenceChannel.track({ username: ltlPresenceName(), online_at: new Date().toISOString() }); } catch(e) {}
-      updateOnlineCounter(); return;
-    }
-    let data=[];try{data=JSON.parse(localStorage.getItem(STORAGE_KEYS.ONLINE)||'[]');}catch(e){}
-    const now=Date.now();
-    data=data.filter(u=>now-u.lastSeen<60000&&u.clientId!==ltlClientId);
-    data.push({clientId:ltlClientId,username:ltlPresenceName(),lastSeen:now});
-    localStorage.setItem(STORAGE_KEYS.ONLINE,JSON.stringify(data));
-    updateOnlineCounter();
-  }
+  async function updateOnlineCounter(){ if(ltlBackendReady){try{const r=await fetch(LTL_BACKEND_URL+'/api/online',{cache:'no-store'});if(r.ok){const d=await r.json();document.getElementById('onlineCount').textContent=String(Math.max(0,Number(d.count)||0));return;}}catch(e){}} let data=[];try{data=JSON.parse(localStorage.getItem(STORAGE_KEYS.ONLINE)||'[]');}catch(e){} const now=Date.now();document.getElementById('onlineCount').textContent=String(data.filter(u=>now-u.lastSeen<60000).length);}
+  async function updateUserOnline(){const username=currentUser||'Гость';if(ltlBackendReady){try{await fetch(LTL_BACKEND_URL+'/api/online/heartbeat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({clientId:ltlClientId,username})});await updateOnlineCounter();return;}catch(e){}} let data=[];try{data=JSON.parse(localStorage.getItem(STORAGE_KEYS.ONLINE)||'[]');}catch(e){} const now=Date.now();data=data.filter(u=>now-u.lastSeen<60000&&u.clientId!==ltlClientId);data.push({clientId:ltlClientId,username,lastSeen:now});localStorage.setItem(STORAGE_KEYS.ONLINE,JSON.stringify(data));updateOnlineCounter();}
 
   // ===== УВЕДОМЛЕНИЯ О МАТЧАХ =====
   function startMatchNotifications() {
@@ -3635,8 +3594,6 @@
         <div class="game-meta">
           <div class="cell"><div class="label">Баны ${escHtml(match.teamA)}</div><div class="value">${bansAHtml}</div></div>
           <div class="cell"><div class="label">Баны ${escHtml(match.teamB)}</div><div class="value">${bansBHtml}</div></div>
-          <div class="cell"><div class="label">Пики ${escHtml(match.teamA)}</div><div class="value">${picksAHtml}</div></div>
-          <div class="cell"><div class="label">Пики ${escHtml(match.teamB)}</div><div class="value">${picksBHtml}</div></div>
         </div>
         <div>${kdaHtml}</div>
         ${isAdmin ? `
@@ -3645,10 +3602,6 @@
           <input type="text" id="gameScore_${escHtml(g.id)}" placeholder="Счёт в игре (13:9)" value="${escHtml(g.ingameScore)}" style="width:140px;">
           <input type="text" id="gameBansA_${escHtml(g.id)}" placeholder="Баны ${escHtml(match.teamA)} (через запятую)" value="${escHtml(g.bansA.join(', '))}" style="flex:1;min-width:120px;">
           <input type="text" id="gameBansB_${escHtml(g.id)}" placeholder="Баны ${escHtml(match.teamB)} (через запятую)" value="${escHtml(g.bansB.join(', '))}" style="flex:1;min-width:120px;">
-        </div>
-        <div class="game-edit">
-          <input type="text" id="gamePicksA_${escHtml(g.id)}" placeholder="Пики ${escHtml(match.teamA)} (через запятую)" value="${escHtml(g.picksA.join(', '))}" style="flex:1;min-width:120px;">
-          <input type="text" id="gamePicksB_${escHtml(g.id)}" placeholder="Пики ${escHtml(match.teamB)} (через запятую)" value="${escHtml(g.picksB.join(', '))}" style="flex:1;min-width:120px;">
           <button onclick="saveMatchGame('${escHtml(g.id)}')"><i class="fas fa-save"></i> Сохранить карту</button>
           <button class="danger" onclick="deleteMatchGame('${escHtml(g.id)}')"><i class="fas fa-trash"></i></button>
         </div>
@@ -3839,7 +3792,7 @@
       highlightsGrid.innerHTML = highlights.map(h => `
         <div class="highlight-item">
           <div class="highlight-header"><span class="highlight-text">${h.text}</span></div>
-          ${h.video ? `<div class="highlight-video"><video controls><source src="${h.video}" type="video/mp4">Ваш браузер не поддерживает видео.</video></div>` : ''}
+          ${h.video ? `<div class="highlight-video"><video controls preload="metadata" playsinline style="width:100%;max-height:420px;background:#000;border-radius:12px"><source src="${ltlMediaSource(h.video)}" type="${h.videoType || 'video/mp4'}">Ваш браузер не поддерживает видео.</video></div>` : ''}
         </div>
       `).join('');
     }
@@ -4560,7 +4513,9 @@
     // Сброс логотипа
     document.getElementById('resetLogoBtn').addEventListener('click', function() {
       if (currentRole !== ROLES.ADMIN && currentRole !== ROLES.HEAD) { showNotification('Доступ запрещён', 'Только Администратор или Глава', 'fa-lock'); return; }
+      const oldLogo = localStorage.getItem(STORAGE_KEYS.SITE_LOGO);
       localStorage.removeItem(STORAGE_KEYS.SITE_LOGO);
+      if (oldLogo && oldLogo.indexOf('/storage/v1/object/public/ltl-media/') >= 0) ltlDeleteMediaUrl(oldLogo);
       document.getElementById('logoUploadInput').value = '';
       document.getElementById('logoPreview').style.display = 'none';
       updateBranding();
@@ -4669,14 +4624,19 @@
       
       const file = document.getElementById('logoUploadInput').files[0];
       if (file) {
-        const reader = new FileReader();
-        reader.onload = function(e) {
-          localStorage.setItem(STORAGE_KEYS.SITE_LOGO, e.target.result);
-          updateBranding();
-          showStatusMessage('✅ Все настройки успешно сохранены!', 'success');
-          forceRenderAll();
-        };
-        reader.readAsDataURL(file);
+        if (!file.type.startsWith('image/')) { showStatusMessage('❌ Выберите изображение.', 'error'); return; }
+        if (file.size > 5 * 1024 * 1024) { showStatusMessage('❌ Логотип больше 5MB.', 'error'); return; }
+        (async () => {
+          try {
+            const oldLogo = localStorage.getItem(STORAGE_KEYS.SITE_LOGO);
+            const uploaded = await ltlUploadMedia(file, 'site');
+            localStorage.setItem(STORAGE_KEYS.SITE_LOGO, uploaded.url);
+            if (oldLogo && oldLogo !== uploaded.url && oldLogo.indexOf('/storage/v1/object/public/ltl-media/') >= 0) ltlDeleteMediaUrl(oldLogo);
+            updateBranding();
+            showStatusMessage('✅ Логотип сохранён для всех пользователей!', 'success');
+            forceRenderAll();
+          } catch (err) { showStatusMessage('❌ Не удалось сохранить логотип: ' + err.message, 'error'); }
+        })();
       } else {
         updateBranding();
         showStatusMessage('✅ Все настройки успешно сохранены!', 'success');
@@ -4689,7 +4649,9 @@
       if (currentRole !== ROLES.ADMIN && currentRole !== ROLES.HEAD) { showNotification('Доступ запрещён', 'Только Администратор или Глава', 'fa-lock'); return; }
       showConfirm('Сброс настроек', 'Вы уверены, что хотите сбросить все настройки сайта к стандартным?', function() {
         localStorage.removeItem(STORAGE_KEYS.SITE_TITLE);
+        const oldLogoToDelete = localStorage.getItem(STORAGE_KEYS.SITE_LOGO);
         localStorage.removeItem(STORAGE_KEYS.SITE_LOGO);
+        if (oldLogoToDelete && oldLogoToDelete.indexOf('/storage/v1/object/public/ltl-media/') >= 0) ltlDeleteMediaUrl(oldLogoToDelete);
         localStorage.removeItem(STORAGE_KEYS.SERVER_TEXT);
         localStorage.removeItem(STORAGE_KEYS.ABOUT_TEXT);
         localStorage.removeItem(STORAGE_KEYS.SEO_KEYWORDS);
@@ -5173,31 +5135,28 @@
       openModal(document.getElementById('addHighlightModal'));
     });
     document.getElementById('closeHighlightModal').addEventListener('click', () => closeModal(document.getElementById('addHighlightModal')));
-    document.getElementById('saveHighlightBtn').addEventListener('click', function() {
+    document.getElementById('saveHighlightBtn').addEventListener('click', async function() {
       const text = document.getElementById('highlightText').value.trim();
       const file = document.getElementById('highlightVideoFile').files[0];
       if (!text) { showNotification('Ошибка', 'Введите описание момента', 'fa-times-circle'); return; }
       if (!file) { showNotification('Ошибка', 'Выберите видео файл', 'fa-times-circle'); return; }
-      if (file.size > 20 * 1024 * 1024) { showNotification('Ошибка', 'Файл слишком большой. Максимум 20MB.', 'fa-times-circle'); return; }
-      const reader = new FileReader();
-      reader.onload = function(e) {
-        try {
-          const highlights = getHighlights();
-          const key = editingPlayerTeamId + '_' + editingPlayerName;
-          if (!highlights[key]) highlights[key] = [];
-          highlights[key].push({ id: Date.now(), text: text, video: e.target.result });
-          setHighlights(highlights);
-          closeModal(document.getElementById('addHighlightModal'));
-          window.showPlayerDetail(editingPlayerTeamId, editingPlayerName);
-          showNotification('Момент добавлен!', 'Новый лучший момент сохранён', 'fa-star');
-        } catch (err) {
-          showNotification('Ошибка', 'Не удалось сохранить видео: ' + err.message, 'fa-times-circle');
-        }
-      };
-      reader.onerror = function() {
-        showNotification('Ошибка', 'Не удалось прочитать файл', 'fa-times-circle');
-      };
-      reader.readAsDataURL(file);
+      if (!file.type.startsWith('video/')) { showNotification('Ошибка', 'Выберите видеофайл MP4/WebM/MOV.', 'fa-times-circle'); return; }
+      if (file.size > 500 * 1024 * 1024) { showNotification('Ошибка', 'Видео слишком большое. Максимум 500MB.', 'fa-times-circle'); return; }
+      const btn = document.getElementById('saveHighlightBtn');
+      const oldText = btn.textContent; btn.disabled = true; btn.textContent = 'Загрузка видео...';
+      try {
+        const key = editingPlayerTeamId + '_' + editingPlayerName;
+        const uploaded = await ltlUploadMedia(file, 'highlights/' + ltlSafeFileName(key));
+        const highlights = getHighlights();
+        if (!highlights[key]) highlights[key] = [];
+        highlights[key].push({ id: Date.now(), text: text, video: uploaded.url, videoType: uploaded.type, videoSize: uploaded.size, fileName: uploaded.name });
+        setHighlights(highlights);
+        closeModal(document.getElementById('addHighlightModal'));
+        window.showPlayerDetail(editingPlayerTeamId, editingPlayerName);
+        showNotification('Момент добавлен!', 'Видео сохранено в Supabase Storage и доступно всем.', 'fa-star');
+      } catch (err) {
+        showNotification('Ошибка', 'Не удалось сохранить видео: ' + err.message, 'fa-times-circle');
+      } finally { btn.disabled = false; btn.textContent = oldText; }
     });
 
     // Стрим
@@ -5258,16 +5217,20 @@
       openModal(document.getElementById('teamAvatarModal'));
     });
     document.getElementById('closeTeamAvatarModal').addEventListener('click', () => closeModal(document.getElementById('teamAvatarModal')));
-    document.getElementById('saveTeamAvatarBtn').addEventListener('click', function() {
+    document.getElementById('saveTeamAvatarBtn').addEventListener('click', async function() {
       const file = document.getElementById('teamAvatarFile').files[0];
       if (!file) { showNotification('Ошибка', 'Выберите изображение', 'fa-times-circle'); return; }
-      const reader = new FileReader();
-      reader.onload = function(e) {
-        const teams = getTeams();
-        const team = teams.find(t => t.id === editingTeamId);
-        if (team) { team.avatar = e.target.result; setTeams(teams); forceRenderAll(); closeModal(document.getElementById('teamAvatarModal')); showNotification('Успех!', 'Аватар команды обновлён', 'fa-check-circle'); }
-      };
-      reader.readAsDataURL(file);
+      if (!file.type.startsWith('image/')) { showNotification('Ошибка', 'Выберите изображение', 'fa-times-circle'); return; }
+      if (file.size > 5 * 1024 * 1024) { showNotification('Ошибка', 'Максимум 5MB', 'fa-times-circle'); return; }
+      const btn = document.getElementById('saveTeamAvatarBtn'); const oldText=btn.textContent; btn.disabled=true; btn.textContent='Загрузка...';
+      try {
+        const teams = getTeams(); const team = teams.find(t => t.id === editingTeamId); if (!team) throw new Error('Команда не найдена');
+        const oldAvatar = team.avatar; const uploaded = await ltlUploadMedia(file, 'teams/' + ltlSafeFileName(team.id || team.name));
+        team.avatar = uploaded.url; setTeams(teams);
+        if (oldAvatar && oldAvatar.indexOf('/storage/v1/object/public/ltl-media/') >= 0) ltlDeleteMediaUrl(oldAvatar);
+        forceRenderAll(); closeModal(document.getElementById('teamAvatarModal')); showNotification('Успех!', 'Аватар команды сохранён для всех', 'fa-check-circle');
+      } catch(err) { showNotification('Ошибка', 'Не удалось сохранить аватар: ' + err.message, 'fa-times-circle'); }
+      finally { btn.disabled=false; btn.textContent=oldText; }
     });
 
     // Брекет
@@ -5483,6 +5446,8 @@
       updateOnlineCounter();
     }, 30000);
   });
+
+  setTimeout(() => { ltlMigrateLegacyMedia(); }, 2500);
 })();
 </script>
 </body>
