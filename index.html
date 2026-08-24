@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
+<!-- LTL_SUPABASE_FIX_V8 -->
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.5">
   <title id="siteTitle">LTL | LOW TABE LEAGUE</title>
@@ -2392,9 +2393,24 @@
   }
 
   // Перехватываем localStorage, сохраняя существующий функционал сайта.
+  // ВАЖНО: старые версии могли сохранить nexus_* в legacy-обёртке
+  // {value: ..., _ltType: ...}. Нормализуем значение прямо при чтении,
+  // чтобы любой существующий render-функционал получал обычную строку/JSON,
+  // даже если старое значение ещё не было переписано в базе.
   try {
+    const _getItem = Storage.prototype.getItem;
     const _setItem = Storage.prototype.setItem;
     const _removeItem = Storage.prototype.removeItem;
+    Storage.prototype.getItem = function(key) {
+      const raw = _getItem.call(this, key);
+      if (this === window.localStorage && ltlIsSharedKey(key) && raw != null) {
+        try {
+          const normalized = ltlUnwrapStoredValue(raw);
+          return typeof normalized === 'string' ? normalized : JSON.stringify(normalized);
+        } catch (_) {}
+      }
+      return raw;
+    };
     Storage.prototype.setItem = function(key, value) {
       _setItem.call(this, key, value);
       if (this === window.localStorage && ltlIsSharedKey(key)) ltlPushKey(key, value);
@@ -2444,12 +2460,26 @@
   // чтении, чтобы UI получал обычную строку/массив/объект и не показывал
   // сырой JSON пользователю.
   function ltlUnwrapStoredValue(value) {
-    if (value && typeof value === 'object' && !Array.isArray(value) &&
-        Object.prototype.hasOwnProperty.call(value, 'value') &&
-        value._ltType) {
-      return value.value;
+    // Supabase JSONB may contain either the legacy wrapper object directly
+    // or that same wrapper serialized as a JSON string. Normalize both forms.
+    let current = value;
+    for (let i = 0; i < 3; i++) {
+      if (typeof current === 'string') {
+        const text = current.trim();
+        if (!text || (text[0] !== '{' && text[0] !== '[')) break;
+        try { current = JSON.parse(text); } catch (_) { break; }
+        continue;
+      }
+      if (current && typeof current === 'object' && !Array.isArray(current) &&
+          Object.prototype.hasOwnProperty.call(current, 'value') &&
+          (Object.prototype.hasOwnProperty.call(current, '_ltType') ||
+           Object.keys(current).length <= 2)) {
+        current = current.value;
+        continue;
+      }
+      break;
     }
-    return value;
+    return current;
   }
 
   async function ltlBootstrapBackend() {
@@ -3527,13 +3557,24 @@
     document.getElementById('aboutTournamentsCount').textContent = getTournaments().length;
   }
 
+  function ltlSharedRead(key, fallback = null) {
+    try {
+      const raw = Storage.prototype.getItem.call(window.localStorage, key);
+      if (raw == null || raw === '') return fallback;
+      const value = typeof ltlUnwrapStoredValue === 'function' ? ltlUnwrapStoredValue(raw) : raw;
+      return (value == null || value === '') ? fallback : value;
+    } catch (_) { return fallback; }
+  }
+
   function updateBranding() {
-    const siteTitle = localStorage.getItem(STORAGE_KEYS.SITE_TITLE) || 'LTL | LOW TABE LEAGUE';
-    const siteLogo = localStorage.getItem(STORAGE_KEYS.SITE_LOGO) || null;
-    const aboutText = localStorage.getItem(STORAGE_KEYS.ABOUT_TEXT) || 'Киберспортивная платформа для проведения турниров, матчей и отслеживания рейтингов команд и игроков. LTL | LOW TABE LEAGUE — это место, где собираются лучшие киберспортсмены и фанаты.';
-    const serverText = localStorage.getItem(STORAGE_KEYS.SERVER_TEXT) || 'Добро пожаловать в LTL | LOW TABE LEAGUE — главную киберспортивную платформу!';
-    const seoKeywords = localStorage.getItem(STORAGE_KEYS.SEO_KEYWORDS) || 'LTL, LOW TABE LEAGUE, киберспорт, турниры, Dota 2, CS2';
-    const seoDescription = localStorage.getItem(STORAGE_KEYS.SEO_DESCRIPTION) || 'LTL | LOW TABE LEAGUE — киберспортивная платформа для проведения турниров и матчей';
+    // Read and unwrap legacy values explicitly here as well. This avoids relying
+    // on a browser-specific Storage.prototype hook for the first render.
+    const siteTitle = ltlSharedRead(STORAGE_KEYS.SITE_TITLE, 'LTL | LOW TABE LEAGUE');
+    const siteLogo = ltlSharedRead(STORAGE_KEYS.SITE_LOGO, null);
+    const aboutText = ltlSharedRead(STORAGE_KEYS.ABOUT_TEXT, 'Киберспортивная платформа для проведения турниров, матчей и отслеживания рейтингов команд и игроков. LTL | LOW TABE LEAGUE — это место, где собираются лучшие киберспортсмены и фанаты.');
+    const serverText = ltlSharedRead(STORAGE_KEYS.SERVER_TEXT, 'Добро пожаловать в LTL | LOW TABE LEAGUE — главную киберспортивную платформу!');
+    const seoKeywords = ltlSharedRead(STORAGE_KEYS.SEO_KEYWORDS, 'LTL, LOW TABE LEAGUE, киберспорт, турниры, Dota 2, CS2');
+    const seoDescription = ltlSharedRead(STORAGE_KEYS.SEO_DESCRIPTION, 'LTL | LOW TABE LEAGUE — киберспортивная платформа для проведения турниров и матчей');
     
     document.getElementById('siteTitle').textContent = siteTitle;
     document.getElementById('aboutTitle').textContent = siteTitle;
@@ -4215,7 +4256,30 @@
     document.getElementById('matchTournament').innerHTML = `<option value="">Выберите турнир</option>${options}`;
   }
 
+  // НОРМАЛИЗАЦИЯ СТАРЫХ ОБЩИХ ДАННЫХ ДО ПЕРВОГО РЕНДЕРА
+  // Ранние версии сайта могли оставить в localStorage обёртки вида
+  // {\"value\":\"текст\",\"_ltType\":\"string\"}.
+  // Нормализуем их ДО initDatabase(), чтобы интерфейс никогда не показывал сырой JSON.
+  function ltlNormalizeLocalSharedState() {
+    try {
+      const keys = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (ltlIsSharedKey(k)) keys.push(k);
+      }
+      keys.forEach((k) => {
+        const raw = localStorage.getItem(k);
+        const value = ltlUnwrapStoredValue(raw);
+        const normalized = (typeof value === 'string') ? value : JSON.stringify(value);
+        if (normalized !== raw) localStorage.setItem(k, normalized);
+      });
+    } catch (e) {
+      console.warn('LTL local state normalization failed:', e);
+    }
+  }
+
   // ===== ЗАПУСК =====
+  ltlNormalizeLocalSharedState();
   initDatabase();
   ltlBootstrapBackend();
   const savedTheme = localStorage.getItem(STORAGE_KEYS.THEME) || 'light';
