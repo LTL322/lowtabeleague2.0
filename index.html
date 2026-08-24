@@ -2383,7 +2383,7 @@
         const parsed = typeof value === 'string' ? (() => {
           try { return JSON.parse(value); } catch (_) { return value; }
         })() : value;
-        const { error } = await sb.from('ltl_state').upsert({ key, value: parsed, updated_at: new Date().toISOString() }, { onConflict: 'key' });
+        const { error } = await sb.from('ltl_state').upsert({ key, value_json: parsed, updated_at: new Date().toISOString() }, { onConflict: 'key' });
         if (error) throw error;
       }
     } catch (e) {
@@ -2422,7 +2422,7 @@
             const row = payload.new || {};
             const key = row.key;
             if (key && ltlIsSharedKey(key)) {
-              const value = row.value;
+              const value = row.value_json;
               localStorage.setItem(key, typeof value === 'string' ? value : JSON.stringify(value));
               ltlRenderAfterRemoteSync(key);
             }
@@ -2447,10 +2447,10 @@
       return;
     }
     try {
-      const { data: rows, error } = await sb.from('ltl_state').select('key,value');
+      const { data: rows, error } = await sb.from('ltl_state').select('key,value_json');
       if (error) throw error;
       const remote = {};
-      (rows || []).forEach(row => { if (row && ltlIsSharedKey(row.key)) remote[row.key] = row.value; });
+      (rows || []).forEach(row => { if (row && ltlIsSharedKey(row.key)) remote[row.key] = row.value_json; });
 
       // Серверные данные имеют приоритет. Локальные ключи, которых ещё нет на сервере, отправляем один раз.
       const local = {};
