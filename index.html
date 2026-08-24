@@ -9,6 +9,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&family=Space+Grotesk:wght@500;600;700;800;900&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
   <script src="./supabase-config.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <style>
     /* ===== ОСНОВНЫЕ СТИЛИ (без изменений) ===== */
     :root {
@@ -2327,37 +2328,211 @@
     FILES: 'nexus_files'
   };
 
-  // ===== ОБЩИЙ BACKEND / REALTIME СИНХРОНИЗАЦИЯ =====
-  const LTL_BACKEND_URL = (window.LTL_BACKEND_URL || '').replace(/\/$/, '') || (location.protocol === 'http:' || location.protocol === 'https:' ? location.origin : 'http://localhost:8787');
-  const LTL_LOCAL_ONLY_KEYS = new Set([STORAGE_KEYS.SESSION, STORAGE_KEYS.THEME, STORAGE_KEYS.VIEW_MODE, STORAGE_KEYS.ONLINE]);
-  let ltlBackendReady = false, ltlApplyingRemote = false, ltlEventSource = null;
-  function ltlIsSharedKey(key) { return typeof key === 'string' && key.indexOf('nexus_') === 0 && !LTL_LOCAL_ONLY_KEYS.has(key); }
-  function ltlRenderAfterRemoteSync(key) { try { if (typeof forceRenderAll === 'function') forceRenderAll(); else if (typeof renderAll === 'function') renderAll(); if (key === STORAGE_KEYS.USERS && typeof renderRoleList === 'function') renderRoleList(); if (typeof updateTotalUsersCount === 'function') updateTotalUsersCount(); } catch(e) { console.warn('Realtime render error',e); } }
-  async function ltlPushKey(key,value) { if (!ltlIsSharedKey(key) || ltlApplyingRemote || !ltlBackendReady) return; try { await fetch(LTL_BACKEND_URL+'/api/state/'+encodeURIComponent(key),{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({value})}); } catch(e) { console.warn('Backend write failed:',key,e); } }
-  try { const _setItem=Storage.prototype.setItem, _removeItem=Storage.prototype.removeItem; Storage.prototype.setItem=function(key,value){ _setItem.call(this,key,value); if(this===window.localStorage&&ltlIsSharedKey(key)) ltlPushKey(key,value); }; Storage.prototype.removeItem=function(key){ _removeItem.call(this,key); if(this===window.localStorage&&ltlIsSharedKey(key)) ltlPushKey(key,null); }; } catch(e) { console.warn('Storage sync hook unavailable',e); }
-  async function ltlBootstrapBackend() {
+  // ===== SUPABASE DATABASE / REALTIME СИНХРОНИЗАЦИЯ =====
+  // Общие данные сайта больше НЕ используют /api/state и /api/events.
+  // Все nexus_* ключи хранятся в public.ltl_state и синхронизируются через Supabase Realtime.
+  let ltlSupabase = null;
+  let ltlBackendReady = false;
+  let ltlApplyingRemote = false;
+  let ltlRealtimeChannel = null;
+  let ltlOnlineChannel = null;
+
+  function ltlGetSupabaseClient() {
+    if (ltlSupabase) return ltlSupabase;
+    const c = ltlSupabaseConfig();
+    if (!c.url || !c.key || !window.supabase || typeof window.supabase.createClient !== 'function') return null;
     try {
-      const r=await fetch(LTL_BACKEND_URL+'/api/state',{cache:'no-store'});
-      if(!r.ok) throw new Error('HTTP '+r.status);
-      const remote=await r.json();
-      const keys=Object.keys(remote||{}).filter(ltlIsSharedKey);
-      ltlApplyingRemote=true;
-      keys.forEach(k=>{const v=remote[k]; if(v===null||typeof v==='undefined') localStorage.removeItem(k); else localStorage.setItem(k,typeof v==='string'?v:JSON.stringify(v));});
-      const local={};
-      for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i); if(ltlIsSharedKey(k)) local[k]=localStorage.getItem(k);}
-      ltlApplyingRemote=false;
-      ltlBackendReady=true;
-      // Серверные значения имеют приоритет, но локальные ключи, которых ещё нет на сервере, отправляем тоже.
-      for(const k of Object.keys(local)){
-        if(!Object.prototype.hasOwnProperty.call(remote,k)){
-          await fetch(LTL_BACKEND_URL+'/api/state/'+encodeURIComponent(k),{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({value:local[k]})});
-        }
-      }
-      ltlConnectEvents();
-      ltlRenderAfterRemoteSync();
-    } catch(e) { ltlBackendReady=false; console.warn('Общий backend недоступен. Сайт продолжит работу локально:',e); }
+      ltlSupabase = window.supabase.createClient(c.url, c.key, {
+        auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+        realtime: { params: { eventsPerSecond: 10 } }
+      });
+      return ltlSupabase;
+    } catch (e) {
+      console.warn('Не удалось создать Supabase client:', e);
+      return null;
+    }
   }
-  function ltlConnectEvents(){ if(ltlEventSource) return; try{ ltlEventSource=new EventSource(LTL_BACKEND_URL+'/api/events'); ltlEventSource.onmessage=function(ev){try{const m=JSON.parse(ev.data||'{}'); if(!m.key||!ltlIsSharedKey(m.key))return; ltlApplyingRemote=true; if(m.deleted)localStorage.removeItem(m.key); else localStorage.setItem(m.key,typeof m.value==='string'?m.value:JSON.stringify(m.value)); ltlApplyingRemote=false; ltlRenderAfterRemoteSync(m.key);}catch(e){console.warn('Realtime event error',e);}}; ltlEventSource.addEventListener('online',function(ev){try{const d=JSON.parse(ev.data||'{}'); document.getElementById('onlineCount').textContent=String(Math.max(0,Number(d.count)||0));}catch(e){}}); }catch(e){console.warn('SSE unavailable',e);} }
+
+  const LTL_LOCAL_ONLY_KEYS = new Set([
+    STORAGE_KEYS.SESSION,
+    STORAGE_KEYS.THEME,
+    STORAGE_KEYS.VIEW_MODE,
+    STORAGE_KEYS.ONLINE
+  ]);
+  function ltlIsSharedKey(key) {
+    return typeof key === 'string' && key.indexOf('nexus_') === 0 && !LTL_LOCAL_ONLY_KEYS.has(key);
+  }
+  function ltlRenderAfterRemoteSync(key) {
+    try {
+      if (typeof forceRenderAll === 'function') forceRenderAll();
+      else if (typeof renderAll === 'function') renderAll();
+      if (key === STORAGE_KEYS.USERS && typeof renderRoleList === 'function') renderRoleList();
+      if (typeof updateTotalUsersCount === 'function') updateTotalUsersCount();
+    } catch (e) { console.warn('Realtime render error:', e); }
+  }
+
+  async function ltlPushKey(key, value) {
+    if (!ltlIsSharedKey(key) || ltlApplyingRemote || !ltlBackendReady) return;
+    const sb = ltlGetSupabaseClient();
+    if (!sb) return;
+    try {
+      if (value === null || typeof value === 'undefined') {
+        const { error } = await sb.from('ltl_state').delete().eq('key', key);
+        if (error) throw error;
+      } else {
+        const parsed = typeof value === 'string' ? (() => {
+          try { return JSON.parse(value); } catch (_) { return value; }
+        })() : value;
+        const { error } = await sb.from('ltl_state').upsert({ key, value: parsed, updated_at: new Date().toISOString() }, { onConflict: 'key' });
+        if (error) throw error;
+      }
+    } catch (e) {
+      console.warn('Supabase write failed:', key, e);
+    }
+  }
+
+  // Перехватываем localStorage, сохраняя существующий функционал сайта.
+  try {
+    const _setItem = Storage.prototype.setItem;
+    const _removeItem = Storage.prototype.removeItem;
+    Storage.prototype.setItem = function(key, value) {
+      _setItem.call(this, key, value);
+      if (this === window.localStorage && ltlIsSharedKey(key)) ltlPushKey(key, value);
+    };
+    Storage.prototype.removeItem = function(key) {
+      _removeItem.call(this, key);
+      if (this === window.localStorage && ltlIsSharedKey(key)) ltlPushKey(key, null);
+    };
+  } catch (e) { console.warn('Storage sync hook unavailable:', e); }
+
+  function ltlConnectRealtime() {
+    const sb = ltlGetSupabaseClient();
+    if (!sb || ltlRealtimeChannel) return;
+    ltlRealtimeChannel = sb.channel('ltl-state-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'ltl_state' }, payload => {
+        try {
+          ltlApplyingRemote = true;
+          if (payload.eventType === 'DELETE') {
+            const key = payload.old && payload.old.key;
+            if (key && ltlIsSharedKey(key)) {
+              localStorage.removeItem(key);
+              ltlRenderAfterRemoteSync(key);
+            }
+          } else {
+            const row = payload.new || {};
+            const key = row.key;
+            if (key && ltlIsSharedKey(key)) {
+              const value = row.value;
+              localStorage.setItem(key, typeof value === 'string' ? value : JSON.stringify(value));
+              ltlRenderAfterRemoteSync(key);
+            }
+          }
+        } catch (e) {
+          console.warn('Supabase realtime event error:', e);
+        } finally {
+          ltlApplyingRemote = false;
+        }
+      })
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') console.log('LTL Supabase realtime connected');
+        else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') console.warn('LTL Supabase realtime status:', status);
+      });
+  }
+
+  async function ltlBootstrapBackend() {
+    const sb = ltlGetSupabaseClient();
+    if (!sb) {
+      ltlBackendReady = false;
+      console.warn('Supabase не настроен. Проверьте supabase-config.js');
+      return;
+    }
+    try {
+      const { data: rows, error } = await sb.from('ltl_state').select('key,value');
+      if (error) throw error;
+      const remote = {};
+      (rows || []).forEach(row => { if (row && ltlIsSharedKey(row.key)) remote[row.key] = row.value; });
+
+      // Серверные данные имеют приоритет. Локальные ключи, которых ещё нет на сервере, отправляем один раз.
+      const local = {};
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (ltlIsSharedKey(k)) local[k] = localStorage.getItem(k);
+      }
+
+      ltlApplyingRemote = true;
+      Object.keys(remote).forEach(k => {
+        const v = remote[k];
+        localStorage.setItem(k, typeof v === 'string' ? v : JSON.stringify(v));
+      });
+      ltlApplyingRemote = false;
+      ltlBackendReady = true;
+
+      for (const k of Object.keys(local)) {
+        if (!Object.prototype.hasOwnProperty.call(remote, k)) await ltlPushKey(k, local[k]);
+      }
+
+      ltlConnectRealtime();
+      ltlRenderAfterRemoteSync();
+    } catch (e) {
+      ltlApplyingRemote = false;
+      ltlBackendReady = false;
+      console.error('Supabase database недоступна:', e);
+      console.warn('Проверьте, что таблица public.ltl_state создана и в supabase-config.js указан Publishable/anon key.');
+    }
+  }
+
+  // ===== ОБЩИЙ ОНЛАЙН ЧЕРЕЗ SUPABASE REALTIME PRESENCE =====
+  let ltlClientId = sessionStorage.getItem('ltl_client_id');
+  if (!ltlClientId) {
+    ltlClientId = 'c_' + Date.now() + '_' + Math.random().toString(36).slice(2);
+    sessionStorage.setItem('ltl_client_id', ltlClientId);
+  }
+
+  function ltlUpdatePresenceCount() {
+    const sb = ltlGetSupabaseClient();
+    if (!sb || !ltlOnlineChannel) return;
+    const state = ltlOnlineChannel.presenceState ? ltlOnlineChannel.presenceState() : {};
+    const ids = new Set(Object.keys(state));
+    const count = ids.size;
+    const el = document.getElementById('onlineCount');
+    if (el) el.textContent = String(count);
+  }
+
+  async function ltlStartOnlinePresence() {
+    const sb = ltlGetSupabaseClient();
+    if (!sb || ltlOnlineChannel) return;
+    ltlOnlineChannel = sb.channel('ltl-online', { config: { presence: { key: ltlClientId } } });
+    ltlOnlineChannel
+      .on('presence', { event: 'sync' }, ltlUpdatePresenceCount)
+      .on('presence', { event: 'join' }, ltlUpdatePresenceCount)
+      .on('presence', { event: 'leave' }, ltlUpdatePresenceCount)
+      .subscribe(async (status) => {
+        if (status === 'SUBSCRIBED') {
+          await ltlOnlineChannel.track({ clientId: ltlClientId, username: currentUser || 'Гость', at: Date.now() });
+          ltlUpdatePresenceCount();
+        }
+      });
+  }
+
+  async function updateOnlineCounter() {
+    if (ltlOnlineChannel) ltlUpdatePresenceCount();
+    else {
+      const el = document.getElementById('onlineCount');
+      if (el) el.textContent = '0';
+      await ltlStartOnlinePresence();
+    }
+  }
+
+  async function updateUserOnline() {
+    if (ltlOnlineChannel) {
+      try {
+        await ltlOnlineChannel.track({ clientId: ltlClientId, username: currentUser || 'Гость', at: Date.now() });
+        ltlUpdatePresenceCount();
+        return;
+      } catch (e) { console.warn('Presence update failed:', e); }
+    }
+    await ltlStartOnlinePresence();
+  }
 
   const ROLES = { GUEST: 'guest', PLAYER: 'player', CAPTAIN: 'captain', ADMIN: 'admin', HEAD: 'head' };
   const ROLE_NAMES = { guest: 'Гость', player: 'Игрок', captain: 'Капитан', admin: 'Админ', head: 'Глава' };
@@ -2434,12 +2609,6 @@
       });
     });
   }
-
-  // ===== ОНЛАЙН =====
-  let ltlClientId=sessionStorage.getItem('ltl_client_id');
-  if(!ltlClientId){ltlClientId='c_'+Date.now()+'_'+Math.random().toString(36).slice(2);sessionStorage.setItem('ltl_client_id',ltlClientId);}
-  async function updateOnlineCounter(){ if(ltlBackendReady){try{const r=await fetch(LTL_BACKEND_URL+'/api/online',{cache:'no-store'});if(r.ok){const d=await r.json();document.getElementById('onlineCount').textContent=String(Math.max(0,Number(d.count)||0));return;}}catch(e){}} let data=[];try{data=JSON.parse(localStorage.getItem(STORAGE_KEYS.ONLINE)||'[]');}catch(e){} const now=Date.now();document.getElementById('onlineCount').textContent=String(data.filter(u=>now-u.lastSeen<60000).length);}
-  async function updateUserOnline(){const username=currentUser||'Гость';if(ltlBackendReady){try{await fetch(LTL_BACKEND_URL+'/api/online/heartbeat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({clientId:ltlClientId,username})});await updateOnlineCounter();return;}catch(e){}} let data=[];try{data=JSON.parse(localStorage.getItem(STORAGE_KEYS.ONLINE)||'[]');}catch(e){} const now=Date.now();data=data.filter(u=>now-u.lastSeen<60000&&u.clientId!==ltlClientId);data.push({clientId:ltlClientId,username,lastSeen:now});localStorage.setItem(STORAGE_KEYS.ONLINE,JSON.stringify(data));updateOnlineCounter();}
 
   // ===== УВЕДОМЛЕНИЯ О МАТЧАХ =====
   function startMatchNotifications() {
