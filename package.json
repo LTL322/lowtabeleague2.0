@@ -1,0 +1,1 @@
+{"name":"ltl-tournament-realtime","version":"3.0.0","private":true,"description":"LTL on Vercel + Supabase PostgreSQL + Realtime","scripts":{"start":"python3 -m http.server 3000"}}
