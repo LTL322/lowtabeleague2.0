@@ -1217,6 +1217,29 @@
   .table-wrap, .matches-table-wrap, .bracket-container { max-width:100%; overflow-x:auto; }
 }
 
+
+    /* ===== LTL FIX PACK 2026-08 ===== */
+    .auth-buttons{display:flex!important;align-items:center;gap:8px;position:relative;z-index:30}
+    .auth-buttons .login,.auth-buttons .signup,.auth-buttons .icon-btn{pointer-events:auto;position:relative;z-index:31}
+    .signup{min-width:108px;text-align:center}
+    .stream-nav-button{display:flex!important;align-items:center!important;gap:0!important}
+    .stream-nav-button i{margin-right:10px!important;margin-left:0!important;order:0!important}
+    .matches-table tbody tr{position:relative}
+    .matches-table tbody tr:hover td{background:var(--bg2);border-top:2px solid var(--accent);border-bottom:2px solid var(--accent)}
+    .matches-table tbody tr:hover td:first-child{border-left:2px solid var(--accent);border-radius:10px 0 0 10px}
+    .matches-table tbody tr:hover td:last-child{border-right:2px solid var(--accent);border-radius:0 10px 10px 0}
+    .matches-table tbody tr:hover td{box-shadow:none}
+    .news-card.read-news{border-color:var(--green)!important;background:color-mix(in srgb,var(--green) 10%,var(--card-bg));}
+    .news-card.read-news .tag{color:var(--green)}
+    .news-card.read-news::after{content:'✓ ПРОЧИТАНО';float:right;color:var(--green);font-size:10px;font-weight:800;letter-spacing:.5px}
+    .support-target-row{display:flex;gap:8px;align-items:center;margin-bottom:10px}
+    .support-target-row label{margin:0!important;white-space:nowrap}
+    .support-target-row select{flex:1;padding:9px 12px;border:1px solid var(--line);border-radius:10px;background:var(--input-bg);color:var(--ink)}
+    .support-message-actions{display:flex;gap:6px;margin-top:6px}
+    .support-message-actions button{padding:4px 9px;border:1px solid var(--line);background:var(--paper);color:var(--ink);border-radius:7px;cursor:pointer;font-size:11px}
+    .support-message-actions button:hover{border-color:var(--accent);color:var(--accent)}
+    .player-detail-page{display:none!important}
+    .player-detail-page.active{display:block!important}
 </style>
 </head>
 <body>
@@ -1253,7 +1276,7 @@
       <button data-page="ranking"><i class="fas fa-chart-line"></i> Рейтинг</button>
       <button data-page="top-players"><i class="fas fa-star"></i> Топ игроков</button>
       <button data-page="news"><i class="fas fa-newspaper"></i> Новости</button>
-      <button data-page="stream" id="streamNavBtn"><i class="fas fa-broadcast"></i> Трансляция <span class="live-dot" id="streamDot" style="display:none;"></span></button>
+      <button data-page="stream" id="streamNavBtn" class="stream-nav-button"><i class="fas fa-broadcast"></i> Трансляция <span class="live-dot" id="streamDot" style="display:none;"></span></button>
       <button data-page="about" id="aboutNavBtn"><i class="fas fa-info-circle"></i> О сайте</button>
       <button data-page="profile" id="profileNavBtn"><i class="fas fa-user-circle"></i> Профиль</button>
     </nav>
@@ -1947,6 +1970,10 @@
     <button class="close-btn" id="closeSupportChatModal">&times;</button>
     <h2>💬 Чат с поддержкой</h2>
     <div class="sub">Напишите сообщение администрации</div>
+    <div class="support-target-row">
+      <label for="supportTargetPlayer">Игрок:</label>
+      <select id="supportTargetPlayer"><option value="">Мой аккаунт</option></select>
+    </div>
     <div id="supportChatMessages" style="max-height:300px;overflow-y:auto;margin-bottom:12px;padding:8px;background:var(--bg2);border-radius:12px;border:1px solid var(--line);min-height:150px;"></div>
     <div style="display:flex;gap:8px;">
       <input type="text" id="supportChatInput" placeholder="Ваше сообщение..." style="flex:1;padding:10px 14px;border:1px solid var(--line);border-radius:10px;background:var(--input-bg);color:var(--ink);font-size:14px;outline:none;">
@@ -1963,6 +1990,14 @@
     <h2>📨 Сообщения в поддержку</h2>
     <div class="sub">Все сообщения от пользователей (только для Админа/Главы)</div>
     <div id="supportAdminMessagesList" style="max-height:400px;overflow-y:auto;margin-top:12px;"></div>
+    <div class="support-target-row" style="margin-top:10px;">
+      <label for="supportAdminTargetPlayer">Ответ:</label>
+      <select id="supportAdminTargetPlayer"><option value="">Выберите игрока</option></select>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:8px;">
+      <input type="text" id="supportAdminReplyInput" placeholder="Ответ игроку..." style="flex:1;padding:10px 14px;border:1px solid var(--line);border-radius:10px;background:var(--input-bg);color:var(--ink);font-size:14px;outline:none;">
+      <button id="supportAdminReplyBtn" style="padding:10px 16px;border-radius:10px;border:none;background:var(--accent);color:#fff;font-weight:700;cursor:pointer;">Ответить</button>
+    </div>
     <button class="btn-submit" id="clearSupportAdminBtn" style="background:var(--bg2);color:var(--ink);border:1px solid var(--line);margin-top:8px;">Очистить все</button>
   </div>
 </div>
@@ -3385,8 +3420,11 @@
       if (page.id === 'matches' && currentMatchId) {
         window.openMatchDetailPage(currentMatchId);
       }
-      if (page.id === 'teams' && editingTeamId) {
+      if (page.id === 'teams' && editingTeamId && !document.getElementById('playerDetailPage')?.classList.contains('active')) {
         window.showTeamDetail(editingTeamId);
+      }
+      if (page.id === 'teams' && document.getElementById('playerDetailPage')?.classList.contains('active') && editingPlayerTeamId && editingPlayerName) {
+        window.showPlayerDetail(editingPlayerTeamId, editingPlayerName);
       }
       if (page.id === 'top-players') {
         renderTopPlayers();
@@ -3484,8 +3522,10 @@
   function renderNews() {
     const news = getNews();
     const list = document.getElementById('newsList');
+    let readNews = [];
+    try { readNews = JSON.parse(localStorage.getItem('ltl_read_news') || '[]'); } catch(e) {}
     list.innerHTML = news.map(n => `
-      <article class="card news-card ${n.featured ? 'featured' : ''}" onclick="openFullNews(${n.id})">
+      <article class="card news-card ${n.featured ? 'featured' : ''} ${readNews.includes(n.id) ? 'read-news' : ''}" onclick="openFullNews(${n.id})">
         <div class="tag">${n.date} ${n.featured ? '· Редактор' : ''}</div>
         <h3>${n.title}</h3>
         <p>${n.desc}</p>
@@ -3827,6 +3867,9 @@
     document.querySelectorAll(`#nav button[data-page="${pageId}"], .nav-mobile button[data-page="${pageId}"]`).forEach(b => b.classList.add('active'));
     if (!fromBack && pageId !== 'stream') { pageHistory.push(pageId); if (pageHistory.length > 10) pageHistory.shift(); }
     document.getElementById('breadcrumb').textContent = 'LTL / ' + (document.querySelector(`#nav button[data-page="${pageId}"]`)?.textContent?.trim() || pageId.toUpperCase());
+    try {
+      localStorage.setItem('ltl_current_route', JSON.stringify({ page: pageId, at: Date.now() }));
+    } catch(e) {}
     window.scrollTo({top: 0, behavior: 'smooth'});
   }
 
@@ -3840,6 +3883,13 @@
     document.getElementById('fullNewsContent').textContent = news.full || news.desc;
     document.getElementById('newsList').style.display = 'none';
     document.getElementById('newsFull').classList.add('active');
+    try {
+      const read = JSON.parse(localStorage.getItem('ltl_read_news') || '[]');
+      if (!read.includes(id)) read.push(id);
+      localStorage.setItem('ltl_read_news', JSON.stringify(read));
+      renderNews();
+      document.getElementById('newsList').style.display = 'none';
+    } catch(e) {}
   };
   window.deleteMatch = function(id) {
     showConfirm('Удаление матча', 'Вы уверены, что хотите удалить этот матч?', function() {
@@ -4107,6 +4157,7 @@
   };
   
   window.showPlayerDetail = function(teamId, playerName) {
+    navigateTo('teams', true);
     const data = getPlayerData(teamId, playerName);
     const team = getTeams().find(t => t.id === teamId);
     document.getElementById('playerAvatarBig').innerHTML = playerAvatarMarkup(playerName, 'player-avatar-shared', '');
@@ -4140,6 +4191,13 @@
     document.getElementById('addHighlightContainer').style.display = isAdmin ? 'block' : 'none';
     document.getElementById('teamDetailPage').style.display = 'none';
     document.getElementById('playerDetailPage').classList.add('active');
+    document.getElementById('teamsGrid').style.display = 'none';
+    document.getElementById('teamDetailPage').style.display = 'none';
+    document.getElementById('teamDetailPage').classList.remove('active');
+    document.getElementById('playerDetailPage').classList.add('active');
+    try {
+      localStorage.setItem('ltl_current_route', JSON.stringify({page:'teams', nested:'player', teamId, playerName, at:Date.now()}));
+    } catch(e) {}
   };
   
   window.openPlayerFromMatch = function(playerName, teamName) {
@@ -4147,8 +4205,7 @@
     if (!team) { showNotification('Игрок не найден', 'Команда ' + teamName + ' не найдена', 'fa-exclamation-triangle'); return; }
     if (!team.roster.includes(playerName)) { showNotification('Игрок не найден', 'Игрок ' + playerName + ' не найден в составе команды ' + team.name, 'fa-exclamation-triangle'); return; }
     navigateTo('teams');
-    window.showTeamDetail(team.id);
-    setTimeout(() => { window.showPlayerDetail(team.id, playerName); }, 300);
+    window.showPlayerDetail(team.id, playerName);
   };
   
   window.openTournamentDetail = function(id) {
@@ -4390,10 +4447,36 @@
     }
   }
 
+  // Удаление устаревших записей: оставляем только команды и игроков,
+  // которые реально используются текущими составами. Данные турниров/матчей не трогаем.
+  function cleanupOldPlayerTeamData() {
+    try {
+      const rawTeams = getTeams().filter(t => t && t.id && t.name);
+      const seenTeamIds = new Set(), seenTeamNames = new Set();
+      const teams = rawTeams.filter(t => {
+        const idKey = String(t.id);
+        const nameKey = String(t.name).trim().toLowerCase();
+        if (seenTeamIds.has(idKey) || seenTeamNames.has(nameKey)) return false;
+        seenTeamIds.add(idKey); seenTeamNames.add(nameKey);
+        t.roster = Array.from(new Set((t.roster || []).map(x => String(x).trim()).filter(Boolean)));
+        return true;
+      });
+      const validKeys = new Set();
+      teams.forEach(t => (t.roster || []).forEach(name => validKeys.add(t.id + '_' + name)));
+      const players = getPlayers();
+      const cleanPlayers = {};
+      Object.keys(players).forEach(k => { if (validKeys.has(k)) cleanPlayers[k] = players[k]; });
+      setTeams(teams);
+      setPlayers(cleanPlayers);
+      localStorage.setItem('ltl_cleanup_v1', new Date().toISOString());
+    } catch(e) { console.warn('LTL database cleanup failed:', e); }
+  }
+
   // ===== ЗАПУСК =====
   ltlNormalizeLocalSharedState();
   initDatabase();
   ltlBootstrapBackend();
+  cleanupOldPlayerTeamData();
   const savedTheme = localStorage.getItem(STORAGE_KEYS.THEME) || 'light';
   setTheme(savedTheme);
   
@@ -4483,7 +4566,11 @@
     document.getElementById('closeRegister').addEventListener('click', () => closeModal(document.getElementById('registerModal')));
     document.getElementById('closeConfirmModal').addEventListener('click', () => { document.getElementById('confirmModal').classList.remove('active'); pendingConfirmAction = null; });
     document.querySelectorAll('.modal-overlay').forEach(modal => {
-      modal.addEventListener('click', function(e) { if (e.target === this) closeModal(this); });
+      modal.addEventListener('click', function(e) {
+        // Клик по пустому месту больше НЕ закрывает окно.
+        // Закрытие выполняется только кнопкой X/явным действием.
+        if (e.target === this) e.stopPropagation();
+      });
     });
     
     // Подтверждение
@@ -4590,64 +4677,100 @@
       window.open('https://forms.gle/3UhCSMnpdnb3Bhzu5', '_blank');
     });
 
-    // Чат поддержки
+    function populateSupportPlayerSelects() {
+      const players = [];
+      getTeams().forEach(team => (team.roster || []).forEach(name => {
+        if (!players.some(p => p.name === name)) players.push({name, team: team.name});
+      }));
+      const html = '<option value="">Выберите игрока</option>' + players.map(p => `<option value="${String(p.name).replace(/"/g,'&quot;')}">${p.name} — ${p.team}</option>`).join('');
+      ['supportTargetPlayer','supportAdminTargetPlayer'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.innerHTML = html;
+      });
+      const userSelect = document.getElementById('supportTargetPlayer');
+      if (userSelect && currentUser) {
+        const exists = players.some(p => p.name.toLowerCase() === currentUser.toLowerCase());
+        userSelect.value = exists ? players.find(p => p.name.toLowerCase() === currentUser.toLowerCase()).name : '';
+      }
+    }
+
+    // Чат поддержки — отдельные диалоги по игрокам
     document.getElementById('supportChatBtn').addEventListener('click', function() {
+      populateSupportPlayerSelects();
       const messages = getSupportMessages();
+      const target = document.getElementById('supportTargetPlayer')?.value || currentUser || '';
       const chatMessages = document.getElementById('supportChatMessages');
-      chatMessages.innerHTML = messages.slice().reverse().map(msg => `
+      const thread = messages.filter(msg => (msg.player || msg.username) === target || (!target && msg.username === currentUser));
+      chatMessages.innerHTML = thread.slice().reverse().map(msg => `
         <div style="padding:6px 10px;background:var(--paper);border-radius:8px;border:1px solid var(--line);margin-bottom:4px;">
           <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--muted);">
-            <strong style="color:var(--ink);">${msg.username}</strong>
-            <span>${msg.date}</span>
+            <strong style="color:var(--ink);">${msg.from || msg.username}</strong><span>${msg.date}</span>
           </div>
           <div style="font-size:13px;margin-top:2px;">${msg.text}</div>
-        </div>
-      `).join('');
+        </div>`).join('') || '<div style="color:var(--muted);text-align:center;padding:30px;">Сообщений пока нет</div>';
       chatMessages.scrollTop = chatMessages.scrollHeight;
       openModal(document.getElementById('supportChatModal'));
+    });
+    document.getElementById('supportTargetPlayer').addEventListener('change', function() {
+      const messages = getSupportMessages();
+      const target = this.value || currentUser || '';
+      const chatMessages = document.getElementById('supportChatMessages');
+      const thread = messages.filter(msg => (msg.player || msg.username) === target);
+      chatMessages.innerHTML = thread.slice().reverse().map(msg => `<div style="padding:6px 10px;background:var(--paper);border-radius:8px;border:1px solid var(--line);margin-bottom:4px;"><div style="display:flex;justify-content:space-between;font-size:11px;color:var(--muted);"><strong>${msg.from || msg.username}</strong><span>${msg.date}</span></div><div style="font-size:13px;margin-top:2px;">${msg.text}</div></div>`).join('') || '<div style="color:var(--muted);text-align:center;padding:30px;">Сообщений пока нет</div>';
     });
     document.getElementById('closeSupportChatModal').addEventListener('click', () => closeModal(document.getElementById('supportChatModal')));
     document.getElementById('supportChatSendBtn').addEventListener('click', function() {
       const text = document.getElementById('supportChatInput').value.trim();
       if (!text) return;
+      const target = document.getElementById('supportTargetPlayer')?.value || currentUser || 'Гость';
       const messages = getSupportMessages();
-      messages.push({ id: Date.now(), username: currentUser || 'Гость', text: text, date: new Date().toLocaleString('ru-RU'), read: false });
+      messages.push({id:Date.now(), username:currentUser || 'Гость', player:target, from:currentUser || 'Гость', to:'support', text, date:new Date().toLocaleString('ru-RU'), read:false});
       setSupportMessages(messages);
       document.getElementById('supportChatInput').value = '';
       updateSupportBadge();
-      showNotification('Сообщение отправлено!', 'Администратор скоро ответит', 'fa-check-circle');
+      showNotification('Сообщение отправлено!', 'Диалог с ' + target, 'fa-check-circle');
     });
     document.getElementById('supportChatInput').addEventListener('keydown', function(e) {
       if (e.key === 'Enter') document.getElementById('supportChatSendBtn').click();
     });
-    
+
     document.getElementById('supportChatBtn').addEventListener('dblclick', function() {
       if (currentRole !== ROLES.ADMIN && currentRole !== ROLES.HEAD) {
         showNotification('Доступ запрещён', 'Только Администратор или Глава', 'fa-lock');
         return;
       }
+      populateSupportPlayerSelects();
       const messages = getSupportMessages();
       const list = document.getElementById('supportAdminMessagesList');
-      if (messages.length === 0) {
-        list.innerHTML = '<p style="color:var(--muted);text-align:center;padding:20px;">Сообщений пока нет</p>';
-      } else {
-        list.innerHTML = messages.slice().reverse().map(msg => `
-          <div style="padding:10px 14px;background:var(--paper);border-radius:10px;border:1px solid var(--line);margin-bottom:8px;">
-            <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--muted);">
-              <strong style="color:var(--ink);">${msg.username}</strong>
-              <span>${msg.date}</span>
-            </div>
-            <div style="margin-top:4px;font-size:14px;">${msg.text}</div>
-            ${!msg.read ? `<div style="font-size:10px;color:var(--accent);margin-top:2px;">🆕 Новое</div>` : ''}
+      list.innerHTML = messages.length ? messages.slice().reverse().map(msg => `
+        <div style="padding:10px 14px;background:var(--paper);border-radius:10px;border:1px solid var(--line);margin-bottom:8px;">
+          <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--muted);">
+            <strong style="color:var(--ink);">${msg.player || msg.username}</strong><span>${msg.date}</span>
           </div>
-        `).join('');
-      }
+          <div style="margin-top:4px;font-size:14px;">${msg.text}</div>
+          <div class="support-message-actions"><button data-support-player="${String(msg.player || msg.username).replace(/"/g,'&quot;')}">Ответить этому игроку</button></div>
+        </div>`).join('') : '<p style="color:var(--muted);text-align:center;padding:20px;">Сообщений пока нет</p>';
       messages.forEach(m => m.read = true);
       setSupportMessages(messages);
       updateSupportBadge();
+      list.querySelectorAll('[data-support-player]').forEach(btn => btn.addEventListener('click', function() {
+        document.getElementById('supportAdminTargetPlayer').value = this.dataset.supportPlayer;
+        document.getElementById('supportAdminReplyInput').focus();
+      }));
       openModal(document.getElementById('supportAdminModal'));
     });
     document.getElementById('closeSupportAdminModal').addEventListener('click', () => closeModal(document.getElementById('supportAdminModal')));
+    document.getElementById('supportAdminReplyBtn').addEventListener('click', function() {
+      if (currentRole !== ROLES.ADMIN && currentRole !== ROLES.HEAD) return;
+      const target = document.getElementById('supportAdminTargetPlayer').value;
+      const text = document.getElementById('supportAdminReplyInput').value.trim();
+      if (!target || !text) { showNotification('Ошибка','Выберите игрока и введите ответ','fa-times-circle'); return; }
+      const messages = getSupportMessages();
+      messages.push({id:Date.now(), username:target, player:target, from:'Администрация', to:target, text, date:new Date().toLocaleString('ru-RU'), read:false});
+      setSupportMessages(messages);
+      document.getElementById('supportAdminReplyInput').value = '';
+      showNotification('Ответ отправлен', target, 'fa-reply');
+    });
     document.getElementById('clearSupportAdminBtn').addEventListener('click', function() {
       showConfirm('Очистить сообщения', 'Вы уверены, что хотите удалить все сообщения?', function() {
         setSupportMessages([]);
@@ -5842,7 +5965,23 @@
     populateTeamSelects();
     populateTournamentSelect();
     updateTimerDisplay();
+    populateSupportPlayerSelects();
     forceRenderAll();
+
+    // Восстановление последней страницы после F5/обновления.
+    setTimeout(() => {
+      try {
+        const route = JSON.parse(localStorage.getItem('ltl_current_route') || 'null');
+        if (route?.page) {
+          if (route.nested === 'player' && route.teamId && route.playerName) {
+            navigateTo('teams', true);
+            window.showPlayerDetail(route.teamId, route.playerName);
+          } else {
+            navigateTo(route.page, true);
+          }
+        }
+      } catch(e) { console.warn('Route restore failed', e); }
+    }, 50);
     updateTotalUsersCount();
     updateOnlineCounter();
     
