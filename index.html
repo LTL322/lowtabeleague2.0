@@ -4473,6 +4473,40 @@
     window.showPlayerDetail(team ? team.id : null, playerName, 'top-players');
   };
 
+
+  // ===== ПЕРЕХОД ИЗ ТОПОВ ИГРОКОВ НА ЛИЧНУЮ СТРАНИЦУ =====
+  // Сохраняем существующую страницу игрока и используем её из любых рейтингов.
+  function openPlayerFromTop(playerName) {
+    try {
+      const name = String(playerName || '').trim();
+      if (!name) return;
+
+      // Используем существующий механизм страницы игрока, если он есть.
+      if (typeof window.openPlayerFromMatch === 'function') {
+        window.openPlayerFromMatch(name, '');
+        return;
+      }
+
+      // Запасной вариант: передаём имя через route/hash, не ломая существующую логику.
+      const encoded = encodeURIComponent(name);
+      if (typeof window.openPlayerPage === 'function') {
+        window.openPlayerPage(name);
+      } else {
+        window.location.hash = '#player=' + encoded;
+      }
+    } catch (e) {
+      console.warn('Не удалось открыть страницу игрока:', e);
+    }
+  }
+
+  function makeTopPlayerClickable(playerName, displayName) {
+    const name = String(playerName || '').trim();
+    const label = String(displayName || name);
+    if (!name) return label;
+    const safeName = name.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    return `<a class="player-link top-player-link" href="javascript:void(0)" onclick="event.preventDefault();event.stopPropagation();openPlayerFromTop('${safeName}')" title="Открыть страницу игрока">${label}</a>`;
+  }
+
   window.openPlayerFromMatch = function(playerName, teamName) {
     const team = getTeams().find(t => t.name === teamName);
     if (!team) { showNotification('Игрок не найден', 'Команда ' + teamName + ' не найдена', 'fa-exclamation-triangle'); return; }
@@ -6611,6 +6645,27 @@
     };
   }
 </script>
+
+
+  // Делегирование клика для строк/карточек игроков в ТОПах.
+  document.addEventListener('click', function(e) {
+    const el = e.target.closest(
+      '[data-player-name], .top-player, .top-player-card, .top-player-row, .player-ranking-item'
+    );
+    if (!el) return;
+    if (el.closest('a,button,input,select,textarea') && !el.matches('a')) return;
+
+    const playerName =
+      el.dataset.playerName ||
+      el.getAttribute('data-player') ||
+      el.querySelector('.player-name, .top-player-name, .player-link')?.textContent?.trim();
+
+    if (playerName) {
+      e.preventDefault();
+      e.stopPropagation();
+      openPlayerFromTop(playerName);
+    }
+  }, true);
 
 </body>
 </html>
