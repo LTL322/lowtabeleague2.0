@@ -1229,9 +1229,9 @@
     .matches-table tbody tr:hover td:first-child{border-left:2px solid var(--accent);border-radius:10px 0 0 10px}
     .matches-table tbody tr:hover td:last-child{border-right:2px solid var(--accent);border-radius:0 10px 10px 0}
     .matches-table tbody tr:hover td{box-shadow:none}
-    .news-card.read-news{border-color:var(--green)!important;background:color-mix(in srgb,var(--green) 10%,var(--card-bg));}
-    .news-card.read-news .tag{color:var(--green)}
-    .news-card.read-news::after{content:'✓ ПРОЧИТАНО';float:right;color:var(--green);font-size:10px;font-weight:800;letter-spacing:.5px}
+    .news-card{background:#e7e7e7!important;color:#555;}.news-card.read-news{background:#555!important;color:#fff;border-color:#444!important;}
+    .news-card.read-news .tag{color:#d6d6d6}.news-card.read-news h3{color:#fff}.news-card.read-news p{color:#ddd}
+    .news-card.read-news::after{content:'✓ ПРОЧИТАНО';float:right;color:#ddd;font-size:10px;font-weight:800;letter-spacing:.5px}
     .support-target-row{display:flex;gap:8px;align-items:center;margin-bottom:10px}
     .support-target-row label{margin:0!important;white-space:nowrap}
     .support-target-row select{flex:1;padding:9px 12px;border:1px solid var(--line);border-radius:10px;background:var(--input-bg);color:var(--ink)}
@@ -1253,6 +1253,24 @@
   opacity:.55;
   cursor:not-allowed;
 }
+</style>
+
+<style id="v13-fixes">
+/* V13: read/unread news */
+.news-card{background:#e7e7e7 !important;color:#555 !important;}
+.news-card:not(.read-news) .tag,.news-card:not(.read-news) p{color:#666 !important;}
+.news-card.read-news{background:#555 !important;color:#fff !important;border-color:#444 !important;}
+.news-card.read-news .tag,.news-card.read-news p{color:#ddd !important;}
+/* V13: stream icon/image stays on the left of the stream title */
+.stream-widget{display:flex;flex-wrap:nowrap;align-items:center;}
+.stream-widget .stream-icon{order:0;flex:0 0 56px;}
+.stream-widget .stream-info{order:1;}
+.stream-widget .stream-status{order:2;}
+.stream-widget .stream-arrow{order:3;}
+/* Support player selector is manager-only */
+.support-target-row.support-admin-only{display:flex;}
+.support-target-row:not(.support-admin-only) select{background:var(--bg2);}
+.auth-buttons-mobile.hidden{display:none !important;}
 </style>
 
 </head>
@@ -2001,7 +2019,7 @@
 <div class="modal-overlay" id="supportAdminModal">
   <div class="modal">
     <button class="close-btn" id="closeSupportAdminModal">&times;</button>
-    <h2>📨 Сообщения в поддержку</h2>
+    <h2>Сообщения в поддержку</h2>
     <div class="sub">Все сообщения от пользователей (только для Админа/Главы)</div>
     <div id="supportAdminMessagesList" style="max-height:400px;overflow-y:auto;margin-top:12px;"></div>
     <div class="support-target-row" style="margin-top:10px;">
@@ -2732,25 +2750,7 @@
 
   // ===== УВЕДОМЛЕНИЯ О МАТЧАХ =====
   function startMatchNotifications() {
-    if (matchNotificationInterval) clearInterval(matchNotificationInterval);
-    matchNotificationInterval = setInterval(() => {
-      const matches = getMatches();
-      const now = new Date();
-      matches.forEach(m => {
-        if (m.status === 'upcoming' && m.dateTime) {
-          const matchDate = new Date(m.dateTime);
-          const diffMinutes = (matchDate - now) / (1000 * 60);
-          if (diffMinutes > 0 && diffMinutes <= 15 && !notifiedMatches.has(m.id)) {
-            notifiedMatches.add(m.id);
-            showNotification('⏰ Матч скоро начнётся!', `${m.teamA} vs ${m.teamB} через ${Math.floor(diffMinutes)} минут!`, 'fa-clock');
-            setTimeout(() => notifiedMatches.delete(m.id), 3600000);
-          }
-          if (diffMinutes < 0) {
-            notifiedMatches.delete(m.id);
-          }
-        }
-      });
-    }, 60000);
+    if (matchNotificationInterval) { clearInterval(matchNotificationInterval); matchNotificationInterval = null; }
   }
 
   // ===== ИНИЦИАЛИЗАЦИЯ БАЗЫ =====
@@ -2872,7 +2872,11 @@
     localStorage.setItem(STORAGE_KEYS.SESSION, JSON.stringify({ username, role: currentRole }));
     
     document.getElementById('authButtons').classList.add('hidden');
+    document.getElementById('loginIconBtn')?.classList.add('hidden');
+    document.getElementById('loginBtn')?.classList.add('hidden');
+    document.getElementById('registerBtn')?.classList.add('hidden');
     document.getElementById('userProfile').classList.remove('hidden');
+    document.querySelectorAll('.auth-buttons-mobile').forEach(el => el.classList.add('hidden'));
     document.getElementById('teamRegisterBtn').classList.add('show');
     document.getElementById('profileUsername').textContent = username;
     document.getElementById('profileRole').textContent = ROLE_NAMES[role] || 'Гость';
@@ -2920,7 +2924,11 @@
     updateUserOnline();
     
     document.getElementById('authButtons').classList.remove('hidden');
+    document.getElementById('loginIconBtn')?.classList.remove('hidden');
+    document.getElementById('loginBtn')?.classList.remove('hidden');
+    document.getElementById('registerBtn')?.classList.remove('hidden');
     document.getElementById('userProfile').classList.add('hidden');
+    document.querySelectorAll('.auth-buttons-mobile').forEach(el => el.classList.remove('hidden'));
     document.getElementById('teamRegisterBtn').classList.remove('show');
     document.getElementById('adminPanel').classList.remove('show');
     document.getElementById('roleManagementPanel').style.display = 'none';
@@ -3431,12 +3439,7 @@
         const tourn = getTournaments().find(t => t.id === currentTournamentId);
         if (tourn) renderDoubleEliminationBracket(tourn);
       }
-      if (page.id === 'matches' && currentMatchId) {
-        window.openMatchDetailPage(currentMatchId);
-      }
-      if (page.id === 'teams' && editingTeamId && !document.getElementById('playerDetailPage')?.classList.contains('active')) {
-        window.showTeamDetail(editingTeamId);
-      }
+      // Не открываем автоматически ранее выбранные команду/матч при обычном рендере.
       if (page.id === 'teams' && document.getElementById('playerDetailPage')?.classList.contains('active') && editingPlayerTeamId && editingPlayerName) {
         window.showPlayerDetail(editingPlayerTeamId, editingPlayerName);
       }
@@ -3451,12 +3454,7 @@
 
   // ===== АВТООБНОВЛЕНИЕ =====
   function startAutoUpdate() {
-    if (autoUpdateInterval) clearInterval(autoUpdateInterval);
-    autoUpdateInterval = setInterval(() => {
-      updateOnlineCounter();
-      updateUserOnline();
-      forceRenderAll();
-    }, 10000);
+    if (autoUpdateInterval) { clearInterval(autoUpdateInterval); autoUpdateInterval = null; }
   }
 
   // ===== ОСТАЛЬНЫЕ ФУНКЦИИ РЕНДЕРА =====
@@ -3686,7 +3684,7 @@
       `).join('');
     }
     updateAllStreams();
-    setTimeout(autoStartTimer, 500);
+
   }
 
   function renderTournaments(containerId, limit) {
@@ -3829,36 +3827,7 @@
     document.getElementById('countdown').textContent = String(h).padStart(2,'0') + ':' + String(m).padStart(2,'0') + ':' + String(s).padStart(2,'0');
   }
 
-  function autoStartTimer() {
-    const upcoming = getMatches().filter(m => m.status === 'upcoming' || m.status === 'live');
-    if (upcoming.length === 0) return;
-    const now = new Date();
-    let nextMatch = null, minDiff = Infinity;
-    upcoming.forEach(m => {
-      if (m.dateTime) {
-        const matchDate = new Date(m.dateTime);
-        if (matchDate > now) {
-          const diff = Math.floor((matchDate - now) / 1000);
-          if (diff < minDiff && diff > 0) { minDiff = diff; nextMatch = m; }
-        }
-      }
-    });
-    if (nextMatch && minDiff > 0 && minDiff < 86400) {
-      totalSeconds = minDiff;
-      updateTimerDisplay();
-      if (timerInterval) clearInterval(timerInterval);
-      timerInterval = setInterval(() => {
-        if (totalSeconds <= 0) { clearInterval(timerInterval); timerInterval = null; return; }
-        totalSeconds--;
-        updateTimerDisplay();
-      }, 1000);
-      showNotification('⏰ Таймер запущен', `До матча ${nextMatch.teamA} vs ${nextMatch.teamB} осталось ${Math.floor(minDiff/60)} минут`, 'fa-clock');
-    } else if (!nextMatch) {
-      totalSeconds = 0;
-      updateTimerDisplay();
-      if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
-    }
-  }
+  function autoStartTimer() { /* Автозапуск таймера отключён. Таймер запускается только вручную. */ }
 
   function addPlayerToTop(playerName, teamId) {
     const players = getPlayers();
@@ -3874,6 +3843,18 @@
   function navigateTo(pageId, fromBack = false) {
     if (!pageId) return;
     if (pageId === 'profile' && !currentUser) { openModal(document.getElementById('loginModal')); return; }
+    if (pageId === 'teams') {
+      editingTeamId = null;
+      document.getElementById('teamsGrid').style.display = 'grid';
+      document.getElementById('teamDetailPage').style.display = 'none';
+      document.getElementById('teamDetailPage').classList.remove('active');
+      document.getElementById('playerDetailPage').classList.remove('active');
+    }
+    if (pageId === 'matches') {
+      currentMatchId = null;
+      document.querySelector('#matches .matches-table').style.display = '';
+      document.getElementById('matchDetailPage').classList.remove('active');
+    }
     document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
     const targetPage = document.getElementById(pageId);
     if (targetPage) targetPage.classList.add('active');
@@ -4691,20 +4672,25 @@
       window.open('https://forms.gle/3UhCSMnpdnb3Bhzu5', '_blank');
     });
 
+    function canManageSupportChat() {
+      return currentRole === ROLES.ADMIN || currentRole === ROLES.HEAD;
+    }
+
     function populateSupportPlayerSelects() {
       const players = [];
       getTeams().forEach(team => (team.roster || []).forEach(name => {
         if (!players.some(p => p.name === name)) players.push({name, team: team.name});
       }));
       const html = '<option value="">Выберите игрока</option>' + players.map(p => `<option value="${String(p.name).replace(/"/g,'&quot;')}">${p.name} — ${p.team}</option>`).join('');
-      ['supportTargetPlayer','supportAdminTargetPlayer'].forEach(id => {
-        const el = document.getElementById(id);
-        if (el) el.innerHTML = html;
-      });
+      const admin = canManageSupportChat();
+      const adminSelect = document.getElementById('supportAdminTargetPlayer');
+      if (adminSelect) adminSelect.innerHTML = html;
       const userSelect = document.getElementById('supportTargetPlayer');
-      if (userSelect && currentUser) {
-        const exists = players.some(p => p.name.toLowerCase() === currentUser.toLowerCase());
-        userSelect.value = exists ? players.find(p => p.name.toLowerCase() === currentUser.toLowerCase()).name : '';
+      if (userSelect) {
+        userSelect.innerHTML = admin ? html : '<option value="">Мой аккаунт</option>';
+        userSelect.disabled = !admin;
+        userSelect.closest('.support-target-row')?.classList.toggle('support-admin-only', !admin);
+        if (!admin && currentUser) userSelect.value = '';
       }
     }
 
@@ -5999,17 +5985,8 @@
     updateTotalUsersCount();
     updateOnlineCounter();
     
-    // Запускаем уведомления о матчах
-    startMatchNotifications();
-    
-    // Запускаем автообновление
-    startAutoUpdate();
-    
-    // Обновляем онлайн каждые 30 секунд
-    setInterval(() => {
-      updateUserOnline();
-      updateOnlineCounter();
-    }, 30000);
+    // Фоновая автоматическая активность отключена: действия выполняются только по запросу пользователя.
+
   });
 
   setTimeout(() => { ltlMigrateLegacyMedia(); }, 2500);
