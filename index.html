@@ -6410,6 +6410,123 @@
 
   setTimeout(() => { ltlMigrateLegacyMedia(); }, 2500);
 })();
+
+
+  // ===== PATCH: стабильный просмотр профиля из «Топ игроков» =====
+  // Профиль игрока из рейтинга открывается внутри страницы top-players и
+  // никогда не переводит пользователя в раздел «Команды».
+  window.showPlayerDetail = function(teamId, playerName, origin = 'teams') {
+    origin = origin === 'top-players' ? 'top-players' : 'teams';
+    playerDetailOrigin = origin;
+    const name = String(playerName || '').trim();
+    if (!name) return;
+
+    const teams = getTeams();
+    const team = teamId ? teams.find(t => String(t.id) === String(teamId)) : null;
+    const data = ensurePlayerProfile(name, team ? team.id : null, true);
+
+    // Всегда сохраняем актуальную связь с командой, если она известна.
+    if (team && data.teamId !== team.id) {
+      data.teamId = team.id;
+      const players = getPlayers();
+      players[playerStorageKey(team.id, name)] = data;
+      setPlayers(players);
+    }
+
+    editingPlayerName = name;
+    editingPlayerTeamId = team ? team.id : (data.teamId || null);
+
+    // Показываем правильные данные профиля.
+    document.getElementById('playerAvatarBig').innerHTML = playerAvatarMarkup(name, 'player-avatar-shared', '');
+    document.getElementById('playerAvatarBig').style.overflow = 'hidden';
+    document.getElementById('playerAvatarBig').style.display = 'grid';
+    document.getElementById('playerAvatarBig').style.placeItems = 'center';
+    document.getElementById('playerName').textContent = name;
+    document.getElementById('playerTeam').textContent = team ? team.name : 'Без команды';
+    document.getElementById('playerMatches').textContent = data.matches || 0;
+    document.getElementById('playerWins').textContent = data.wins || 0;
+    document.getElementById('playerLosses').textContent = data.losses || 0;
+    document.getElementById('playerEarnings').textContent = data.earnings || '0 ₽';
+    document.getElementById('playerRatingPoints').textContent = data.lts || 0;
+    document.getElementById('playerBio').textContent = data.bio || 'Биография игрока пока не заполнена.';
+
+    const highlights = getHighlights()[playerStorageKey(editingPlayerTeamId, name)] || [];
+    const highlightsGrid = document.getElementById('highlightsGrid');
+    highlightsGrid.innerHTML = highlights.length ? highlights.map(h => `
+      <div class="highlight-item">
+        <div class="highlight-header"><span class="highlight-text">${escHtml(h.text || '')}</span></div>
+        ${h.video ? `<div class="highlight-video"><video controls preload="metadata" playsinline style="width:100%;max-height:420px;background:#000;border-radius:12px"><source src="${ltlMediaSource(h.video)}" type="${h.videoType || 'video/mp4'}">Ваш браузер не поддерживает видео.</video></div>` : ''}
+      </div>`).join('') : '<p style="color:var(--muted);font-size:14px;">Пока нет добавленных моментов</p>';
+
+    const isAdmin = currentRole === ROLES.ADMIN || currentRole === ROLES.HEAD;
+    document.getElementById('playerAdminControls').style.display = isAdmin ? 'block' : 'none';
+    document.getElementById('addHighlightContainer').style.display = isAdmin ? 'block' : 'none';
+
+    // Ключевой фикс: не вызываем navigateTo('teams') при открытии из топа.
+    const topPage = document.getElementById('top-players');
+    const teamsPage = document.getElementById('teams');
+    if (origin === 'top-players') {
+      document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+      topPage.classList.add('active');
+      document.querySelectorAll('#nav button, .nav-mobile button').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('#nav button[data-page="top-players"], .nav-mobile button[data-page="top-players"]').forEach(b => b.classList.add('active'));
+      document.getElementById('topPlayersGrid').style.display = 'none';
+      document.querySelector('#top-players .section-head').style.display = 'none';
+      document.getElementById('teamDetailPage').style.display = 'none';
+      document.getElementById('teamsGrid').style.display = 'none';
+      mountPlayerDetail('top-players');
+      document.getElementById('playerDetailPage').classList.add('active');
+    } else {
+      navigateTo('teams', true);
+      document.getElementById('teamDetailPage').style.display = 'none';
+      document.getElementById('teamsGrid').style.display = 'none';
+      mountPlayerDetail('teams');
+      document.getElementById('playerDetailPage').classList.add('active');
+    }
+    try { localStorage.setItem('ltl_current_route', JSON.stringify({page:origin,nested:'player',teamId:editingPlayerTeamId,playerName:name,at:Date.now()})); } catch(e) {}
+  };
+
+  window.openPlayerFromTop = function(playerName) {
+    const name = String(playerName || '').trim();
+    if (!name) return;
+    const users = getUsers();
+    const user = users[name.toLowerCase()] || Object.values(users).find(u => u && String(u.username || '').toLowerCase() === name.toLowerCase());
+    const teams = getTeams();
+    let team = user && user.teamId ? teams.find(t => String(t.id) === String(user.teamId)) : null;
+    if (!team) team = teams.find(t => (t.roster || []).some(n => String(n).toLowerCase() === name.toLowerCase()));
+    const data = ensurePlayerProfile(name, team ? team.id : null, true);
+    if (!team && data.teamId) team = teams.find(t => String(t.id) === String(data.teamId));
+    window.showPlayerDetail(team ? team.id : null, name, 'top-players');
+  };
+
+  // Назад из профиля, открытого через «Топ игроков».
+  let topBackButton = document.getElementById('backToTeamBtn');
+  if (topBackButton) {
+    // Удаляем старые обработчики, чтобы возврат из профиля не выполнялся дважды.
+    const cleanBackButton = topBackButton.cloneNode(true);
+    topBackButton.parentNode.replaceChild(cleanBackButton, topBackButton);
+    topBackButton = cleanBackButton;
+    topBackButton.onclick = function(e) {
+      e.preventDefault();
+      document.getElementById('playerDetailPage').classList.remove('active');
+      document.getElementById('playerDetailPage').style.display = 'none';
+      if (playerDetailOrigin === 'top-players') {
+        document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+        document.getElementById('top-players').classList.add('active');
+        document.getElementById('topPlayersGrid').style.display = 'grid';
+        document.querySelector('#top-players .section-head').style.display = 'flex';
+        renderTopPlayers();
+        document.querySelectorAll('#nav button, .nav-mobile button').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('#nav button[data-page="top-players"], .nav-mobile button[data-page="top-players"]').forEach(b => b.classList.add('active'));
+        try { localStorage.setItem('ltl_current_route', JSON.stringify({page:'top-players',at:Date.now()})); } catch(e) {}
+      } else {
+        document.getElementById('teams').classList.add('active');
+        document.getElementById('teamDetailPage').style.display = 'block';
+        document.getElementById('teamDetailPage').classList.add('active');
+        if (editingPlayerTeamId) window.showTeamDetail(editingPlayerTeamId);
+      }
+    };
+  }
 </script>
 
 </body>
