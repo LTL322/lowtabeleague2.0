@@ -2557,7 +2557,7 @@
     if (!c.url || !c.key || !window.supabase || typeof window.supabase.createClient !== 'function') return null;
     try {
       ltlSupabase = window.supabase.createClient(c.url, c.key, {
-        auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+        auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
         realtime: { params: { eventsPerSecond: 10 } }
       });
       return ltlSupabase;
@@ -2800,7 +2800,7 @@
   const ROLES = { GUEST: 'guest', PLAYER: 'player', CAPTAIN: 'captain', ADMIN: 'admin', HEAD: 'head' };
   const ROLE_NAMES = { guest: 'Гость', player: 'Игрок', captain: 'Капитан', admin: 'Админ', head: 'Глава' };
   const ROLE_CLASSES = { guest: 'guest', player: 'player', captain: 'captain', admin: 'admin', head: 'head' };
-  const HEAD_ACCOUNT = { username: 'LOWTABERN1KONYCH', password: 'LOWTABERN1KONYCH567765WER567765', role: ROLES.HEAD };
+  const HEAD_ACCOUNT = { username: 'LOWTABERN1KONYCH', role: ROLES.HEAD };
 
   let currentUser = null;
   let currentRole = ROLES.GUEST;
@@ -2882,19 +2882,6 @@
   // ===== ИНИЦИАЛИЗАЦИЯ БАЗЫ =====
   function initDatabase() {
     let users = JSON.parse(localStorage.getItem(STORAGE_KEYS.USERS)) || {};
-    const headKey = HEAD_ACCOUNT.username.toLowerCase();
-    if (!users[headKey]) {
-      users[headKey] = {
-        username: HEAD_ACCOUNT.username,
-        email: 'head@ltl.com',
-        password: HEAD_ACCOUNT.password,
-        role: ROLES.HEAD,
-        createdAt: new Date().toISOString(),
-        avatar: null
-      };
-      localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users));
-    }
-
     if (!localStorage.getItem(STORAGE_KEYS.NEWS)) {
       localStorage.setItem(STORAGE_KEYS.NEWS, JSON.stringify([
         { id: 1, date: '20.08.2026', title: 'Team Liquid выходит в полуфинал', desc: 'Team Liquid победила Yandex со счётом 2:1 и выходит в полуфинал.', full: 'Team Liquid показала отличную игру в решающей карте. Мидлейнер Nisha сделал трипл-килл на 35-й минуте.', featured: true },
@@ -2991,6 +2978,28 @@
     document.getElementById('themeIcon').className = theme === 'dark' ? 'fas fa-sun' : 'fas fa-moon';
   }
 
+  // ===== ЗАЩИЩЁННАЯ АВТОРИЗАЦИЯ SUPABASE =====
+  function ltlAuthEmail(username) {
+    const raw = String(username || '').trim();
+    const bytes = new TextEncoder().encode(raw.toLowerCase());
+    let bin = '';
+    bytes.forEach(b => bin += String.fromCharCode(b));
+    const token = btoa(bin).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+    return 'u-' + token.slice(0, 48) + '@auth.ltl.invalid';
+  }
+  async function ltlGetAuthUser() {
+    const sb = ltlGetSupabaseClient();
+    if (!sb) return null;
+    try {
+      const { data } = await sb.auth.getUser();
+      return data && data.user ? data.user : null;
+    } catch (_) { return null; }
+  }
+  async function ltlSignOutAuth() {
+    const sb = ltlGetSupabaseClient();
+    if (sb) { try { await sb.auth.signOut(); } catch (_) {} }
+  }
+
   // ===== АВТОРИЗАЦИЯ =====
   function loginUser(username, role, showNotif = true) {
     currentUser = username;
@@ -3041,12 +3050,12 @@
     if (showNotif) showNotification('Добро пожаловать!', 'Вы вошли как ' + username, 'fa-user-check');
   }
 
-  function logoutUser() {
+  async function logoutUser() {
     const username = currentUser;
     currentUser = null;
     currentRole = ROLES.GUEST;
     localStorage.removeItem(STORAGE_KEYS.SESSION);
-    
+    await ltlSignOutAuth();
     updateUserOnline();
     
     document.getElementById('authButtons').classList.remove('hidden');
@@ -3074,20 +3083,23 @@
     showNotification('До свидания!', 'Вы вышли из аккаунта', 'fa-sign-out-alt');
   }
 
-  function restoreSession() {
-    const sessionData = localStorage.getItem(STORAGE_KEYS.SESSION);
-    if (sessionData) {
-      try {
-        const session = JSON.parse(sessionData);
-        const users = getUsers();
-        const userKey = session.username.toLowerCase();
-        if (users[userKey]) {
-          loginUser(session.username, users[userKey].role || ROLES.GUEST, false);
-          return true;
-        }
-      } catch (e) {}
+  async function restoreSession() {
+    try {
+      const sb = ltlGetSupabaseClient();
+      if (!sb) return false;
+      const { data: sessionData } = await sb.auth.getSession();
+      const session = sessionData && sessionData.session;
+      if (!session || !session.user) return false;
+      const username = String(session.user.user_metadata?.username || session.user.email || '').trim();
+      if (!username) return false;
+      const users = getUsers();
+      const profile = users[username.toLowerCase()] || {};
+      loginUser(username, profile.role || ROLES.GUEST, false);
+      return true;
+    } catch (e) {
+      console.warn('Не удалось восстановить защищённую сессию:', e);
+      return false;
     }
-    return false;
   }
 
   // ===== ОБЩИЕ АВАТАРЫ ИГРОКОВ =====
@@ -4825,10 +4837,10 @@
     });
   })();
 
-  if (!restoreSession()) {
+  restoreSession().then(restored => { if (!restored) {
     loadAvatar();
     setTimeout(() => showNotification('Добро пожаловать!', 'LTL | LOW TABE LEAGUE — ваш киберспортивный центр', 'fa-bolt'), 500);
-  }
+  } });
 
   document.addEventListener('DOMContentLoaded', function() {
     // Бургер-меню
@@ -4902,27 +4914,31 @@
       });
     });
     
-    // Логин
-    document.getElementById('loginSubmit').addEventListener('click', function() {
+    // Логин: проверка пароля выполняется только Supabase Auth.
+    document.getElementById('loginSubmit').addEventListener('click', async function() {
       const username = document.getElementById('loginUsername').value.trim();
-      const password = document.getElementById('loginPassword').value.trim();
+      const password = document.getElementById('loginPassword').value;
       const error = document.getElementById('loginError');
       error.classList.remove('show');
       if (!username || !password) { error.textContent = 'Заполните все поля'; error.classList.add('show'); return; }
+      const sb = ltlGetSupabaseClient();
+      if (!sb) { error.textContent = 'Сервис авторизации недоступен'; error.classList.add('show'); return; }
       const users = getUsers();
-      const userKey = username.toLowerCase();
-      if (!users[userKey]) { error.textContent = 'Пользователь не найден'; error.classList.add('show'); return; }
-      if (users[userKey].password !== password) { error.textContent = 'Пароль введён неверно'; error.classList.add('show'); return; }
-      loginUser(username, users[userKey].role || ROLES.GUEST);
+      const profile = users[username.toLowerCase()];
+      if (!profile) { error.textContent = 'Пользователь не найден'; error.classList.add('show'); return; }
+      const email = profile.email || ltlAuthEmail(username);
+      const { error: authError } = await sb.auth.signInWithPassword({ email, password });
+      if (authError) { error.textContent = 'Неверный логин или пароль'; error.classList.add('show'); return; }
+      loginUser(username, profile.role || ROLES.GUEST);
       closeModal(document.getElementById('loginModal'));
       document.getElementById('loginUsername').value = '';
       document.getElementById('loginPassword').value = '';
     });
     
     // Регистрация
-    document.getElementById('registerSubmit').addEventListener('click', function() {
+    document.getElementById('registerSubmit').addEventListener('click', async function() {
       const nick = document.getElementById('regNick').value.trim();
-      const email = nick ? (nick.toLowerCase().replace(/[^a-z0-9._-]+/g, '') + '@ltl.local') : '';
+      const email = document.getElementById('regEmail').value.trim();
       const password = document.getElementById('regPassword').value.trim();
       const confirmPass = document.getElementById('regConfirmPassword').value.trim();
       const error = document.getElementById('registerError');
@@ -4930,7 +4946,7 @@
       error.classList.remove('show');
       passError.style.display = 'none';
       
-      if (!nick || !password || !confirmPass) { alert('Заполните все поля'); return; }
+      if (!nick || !email || !password || !confirmPass) { alert('Заполните все поля'); return; }
       
       const passwordRegex = /^(?=.*[A-Za-z])(?=.*\d)[A-Za-z\d]{8,}$/;
       if (!passwordRegex.test(password)) {
@@ -4949,11 +4965,25 @@
       const userKey = nick.toLowerCase();
       if (users[userKey]) { error.textContent = 'Аккаунт с таким ником уже существует'; error.classList.add('show'); return; }
       
-      users[userKey] = { username: nick, email: email, password: password, role: ROLES.GUEST, teamId: null, createdAt: new Date().toISOString(), avatar: null };
+      const sb = ltlGetSupabaseClient();
+      if (!sb) { error.textContent = 'Сервис авторизации недоступен'; error.classList.add('show'); return; }
+      const { data: authData, error: authError } = await sb.auth.signUp({
+        email,
+        password,
+        options: { data: { username: nick } }
+      });
+      if (authError) {
+        error.textContent = authError.message || 'Не удалось создать аккаунт';
+        error.classList.add('show');
+        return;
+      }
+      // Пароль НИКОГДА не сохраняется в localStorage/Supabase ltl_state.
+      users[userKey] = { username: nick, email: email, role: ROLES.GUEST, teamId: null, createdAt: new Date().toISOString(), avatar: null };
       setUsers(users);
       loginUser(nick, ROLES.GUEST);
       closeModal(document.getElementById('registerModal'));
       document.getElementById('regNick').value = '';
+      document.getElementById('regEmail').value = '';
       document.getElementById('regPassword').value = '';
       document.getElementById('regConfirmPassword').value = '';
       updateTotalUsersCount();
@@ -5656,7 +5686,7 @@
       openModal(document.getElementById('settingsModal'));
     });
     document.getElementById('closeSettingsModal').addEventListener('click', () => closeModal(document.getElementById('settingsModal')));
-    document.getElementById('saveSettingsBtn').addEventListener('click', function() {
+    document.getElementById('saveSettingsBtn').addEventListener('click', async function() {
       const newName = document.getElementById('newUsername').value.trim();
       const newPass = document.getElementById('newPassword').value.trim();
       const confirmPass = document.getElementById('confirmPassword').value.trim();
@@ -5727,8 +5757,10 @@
       }
       
       if (newPass) {
-        users[currentUser.toLowerCase()].password = newPass;
-        setUsers(users);
+        const sb = ltlGetSupabaseClient();
+        if (!sb) { passwordError.textContent = 'Сервис авторизации недоступен'; passwordError.classList.add('show'); return; }
+        const { error: passUpdateError } = await sb.auth.updateUser({ password: newPass });
+        if (passUpdateError) { passwordError.textContent = 'Не удалось изменить пароль'; passwordError.classList.add('show'); return; }
       }
       
       loginUser(currentUser, users[currentUser.toLowerCase()].role || ROLES.GUEST);
