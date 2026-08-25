@@ -1206,26 +1206,6 @@
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 64 64%22%3E%3Crect width=%2264%22 height=%2264%22 rx=%2214%22 fill=%22%23111111%22/%3E%3Ctext x=%2232%22 y=%2241%22 text-anchor=%22middle%22 font-family=%22Arial,sans-serif%22 font-size=%2228%22 font-weight=%22700%22 fill=%22white%22%3ELTL%3C/text%3E%3C/svg%3E">
   <meta name="theme-color" content="#111111">
 
-    /* Улучшения мобильной версии: длинный текст не выходит за границы карточек/экранов */
-    .team-card strong,.team-detail-info h2,.player-detail-page h2,.profile-info h2,.section-head h2,
-    .hero-main h1,.hero-main p,.news-card,.tournament,.match-teams,.rank-row,.kda-player,.roster-item,
-    .team-description p,.modal h2,.modal .sub,.card,.top-player-card,.upcoming-card{
-      overflow-wrap:anywhere;word-break:break-word;min-width:0;
-    }
-    @media(max-width:650px){
-      body{overflow-x:hidden;}
-      .content,.page,.card,.modal,.modal-overlay{max-width:100%;box-sizing:border-box;}
-      .hero-main h1,.hero-main p,.section-head h2,.team-card strong,.team-detail-info h2,.player-detail-page h2{
-        white-space:normal;overflow-wrap:anywhere;word-break:break-word;line-height:1.25;
-      }
-      .teams,.match-detail-page .match-header .match-teams,.team-detail-page .team-detail-header{
-        flex-wrap:wrap;min-width:0;
-      }
-      .match-detail-page .match-header .match-teams{font-size:20px;gap:10px;justify-content:center;text-align:center;}
-      .team-card{min-width:0;}
-      .team-card strong{display:block;}
-      .modal input,.modal textarea,.modal select{max-width:100%;box-sizing:border-box;}
-    }
 </head>
 <body>
 <!-- LTL_AVATAR_TEAM_UI_V10 -->
@@ -1381,7 +1361,7 @@
           <div class="hero-main">
             <div class="eyebrow" id="nextMatchLabel">Следующий матч</div>
             <h1 id="nextMatchTitle">Загрузка...</h1>
-            <p class="hero-copy" id="heroText">Добро пожаловать в LTL | LOW TABE LEAGUE — главную киберспортивную платформу! Следите за матчами, турнирами и новостями.</p>
+            <!-- hero-copy removed by request -->
             <div class="match" id="nextMatchTeams">
               <span class="team-pill" id="nextTeamA">—</span>
               <span class="vs">VS</span>
@@ -2559,6 +2539,39 @@
       console.warn('Проверьте, что таблица public.ltl_state создана и в supabase-config.js указан Publishable/anon key.');
     }
   }
+
+  // Защита краткого названия команды: максимум 5 символов даже при вставке/программном вводе.
+  function ltlLimitTeamShortNameInput(id) {
+    const el = document.getElementById(id);
+    if (!el || el.dataset.ltlShortLimitBound) return;
+    el.dataset.ltlShortLimitBound = '1';
+    const limit = () => { el.value = String(el.value || '').slice(0, 5); };
+    el.addEventListener('input', limit);
+    el.addEventListener('change', limit);
+    limit();
+  }
+  document.addEventListener('DOMContentLoaded', () => {
+    ltlLimitTeamShortNameInput('newTeamIcon');
+    ltlLimitTeamShortNameInput('editTeamIcon');
+  });
+
+  function ltlNormalizeTeams() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEYS.TEAMS);
+      if (!raw) return;
+      const teams = JSON.parse(raw);
+      if (!Array.isArray(teams)) return;
+      let changed = false;
+      teams.forEach(t => {
+        if (t && typeof t === 'object' && typeof t.shortName === 'string' && t.shortName.length > 5) {
+          t.shortName = t.shortName.slice(0, 5);
+          changed = true;
+        }
+      });
+      if (changed) localStorage.setItem(STORAGE_KEYS.TEAMS, JSON.stringify(teams));
+    } catch (_) {}
+  }
+  ltlNormalizeTeams();
 
   // ===== ОБЩИЙ ОНЛАЙН ЧЕРЕЗ SUPABASE REALTIME PRESENCE =====
   let ltlClientId = sessionStorage.getItem('ltl_client_id');
