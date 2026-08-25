@@ -2502,7 +2502,7 @@
   // Одноразовый полный сброс данных текущей базы. После сброса сайт остаётся полностью рабочим,
   // но создаёт только пустое состояние без тестовых команд/турниров/игроков.
   const LTL_DB_RESET_MARKER = 'ltl_database_reset_v2_done';
-  const LTL_DB_RESET_ENABLED = true;
+  const LTL_DB_RESET_ENABLED = false;
 
   function ltlClearLocalDatabaseKeys() {
     const keep = new Set([STORAGE_KEYS.THEME, STORAGE_KEYS.VIEW_MODE]);
@@ -4021,14 +4021,23 @@
   }
 
   function addPlayerToTop(playerName, teamId) {
-    // Получение роли «Игрок» всегда возвращает игрока в Топ, даже если его ранее убрали вручную.
-    restorePlayerInTop(playerName);
-    const data = ensurePlayerProfile(playerName, teamId, false);
+    // Добавлять в Топ можно только аккаунты с системной ролью ROLES.PLAYER.
+    const users = getUsers();
+    const user = users[String(playerName || '').toLowerCase()];
+    if (!user || user.role !== ROLES.PLAYER) {
+      renderTopPlayers();
+      return null;
+    }
+    restorePlayerInTop(user.username);
+    const data = ensurePlayerProfile(user.username, teamId || user.teamId || null, false);
     renderTopPlayers();
     return data;
   }
 
   function getTopPlayersData() {
+    // В Топ игроков попадают ТОЛЬКО зарегистрированные аккаунты
+    // с системной ролью ROLES.PLAYER. Данные из roster/playersStore
+    // сами по себе больше не создают запись в рейтинге.
     const teams = getTeams();
     const users = getUsers();
     const playersStore = getPlayers();
@@ -4039,39 +4048,50 @@
     Object.keys(users).forEach(key => {
       const user = users[key];
       if (!user || user.role !== ROLES.PLAYER || !user.username) return;
-      if (hiddenTopPlayers.has(String(user.username).toLowerCase())) return;
+
+      const unique = String(user.username).toLowerCase();
+      if (seen.has(unique) || hiddenTopPlayers.has(unique)) return;
+
       const team = teams.find(t => String(t.id) === String(user.teamId));
       const data = ensurePlayerProfile(user.username, user.teamId || null, true);
-      const unique = String(user.username).toLowerCase();
-      if (seen.has(unique)) return;
       seen.add(unique);
-      result.push({ name:user.username, team:team ? team.name : 'Без команды', teamId:team ? team.id : null,
-        lts:data.lts || 0, rating:data.rating || 1000, matches:data.matches || 0, wins:data.wins || 0, losses:data.losses || 0 });
+
+      result.push({
+        name: user.username,
+        team: team ? team.name : 'Без команды',
+        teamId: team ? team.id : null,
+        lts: data.lts || 0,
+        rating: data.rating || 1000,
+        matches: data.matches || 0,
+        wins: data.wins || 0,
+        losses: data.losses || 0
+      });
     });
 
+    // Чистим устаревшие профили игроков, которые больше не принадлежат
+    // аккаунтам с ролью "Игрок". Саму статистику не удаляем.
     Object.keys(playersStore).forEach(key => {
       const data = playersStore[key];
       if (!data || !data.name) return;
       const unique = String(data.name).toLowerCase();
-      if (hiddenTopPlayers.has(unique)) return;
-      if (seen.has(unique)) return;
-      const team = teams.find(t => String(t.id) === String(data.teamId));
-      const isRosterPlayer = team && (team.roster || []).some(n => String(n).toLowerCase() === unique);
-      if (!isRosterPlayer && data.role !== 'Игрок') return;
+      const account = users[unique];
+      if (!account || account.role !== ROLES.PLAYER) return;
+      if (seen.has(unique) || hiddenTopPlayers.has(unique)) return;
+
+      const team = teams.find(t => String(t.id) === String(account.teamId));
       seen.add(unique);
-      result.push({ name:data.name, team:team ? team.name : 'Без команды', teamId:team ? team.id : null,
-        lts:data.lts || 0, rating:data.rating || 1000, matches:data.matches || 0, wins:data.wins || 0, losses:data.losses || 0 });
+      result.push({
+        name: account.username,
+        team: team ? team.name : 'Без команды',
+        teamId: team ? team.id : null,
+        lts: data.lts || 0,
+        rating: data.rating || 1000,
+        matches: data.matches || 0,
+        wins: data.wins || 0,
+        losses: data.losses || 0
+      });
     });
 
-    teams.forEach(team => (team.roster || []).forEach(playerName => {
-      const unique = String(playerName).toLowerCase();
-      if (hiddenTopPlayers.has(unique)) return;
-      if (seen.has(unique)) return;
-      const data = ensurePlayerProfile(playerName, team.id, true);
-      seen.add(unique);
-      result.push({ name:playerName, team:team.name, teamId:team.id, lts:data.lts || 0, rating:data.rating || 1000,
-        matches:data.matches || 0, wins:data.wins || 0, losses:data.losses || 0 });
-    }));
     return result;
   }
 
@@ -4729,7 +4749,7 @@
   ltlNormalizeLocalSharedState();
   initDatabase();
   ltlBootstrapBackend();
-  cleanupOldPlayerTeamData();
+  // Автоматическая очистка отключена: данные базы не удаляются при запуске.
   const savedTheme = localStorage.getItem(STORAGE_KEYS.THEME) || 'light';
   setTheme(savedTheme);
   
