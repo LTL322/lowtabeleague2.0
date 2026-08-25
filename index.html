@@ -1241,6 +1241,20 @@
     .player-detail-page{display:none!important}
     .player-detail-page.active{display:block!important}
 </style>
+
+<style id="support-chat-v11-fixes">
+.support-description{
+  margin:6px 0 14px;
+  color:var(--muted, #8b8f98);
+  font-size:14px;
+  line-height:1.45;
+}
+.support-player-selector[disabled]{
+  opacity:.55;
+  cursor:not-allowed;
+}
+</style>
+
 </head>
 <body>
 
@@ -1968,7 +1982,7 @@
 <div class="modal-overlay" id="supportChatModal">
   <div class="modal">
     <button class="close-btn" id="closeSupportChatModal">&times;</button>
-    <h2>💬 Чат с поддержкой</h2>
+    <h2>Чат с поддержкой</h2><p class="support-description">Напишите вашу проблему — мы скоро её рассмотрим.</p>
     <div class="sub">Напишите сообщение администрации</div>
     <div class="support-target-row">
       <label for="supportTargetPlayer">Игрок:</label>
@@ -6001,5 +6015,6 @@
   setTimeout(() => { ltlMigrateLegacyMedia(); }, 2500);
 })();
 </script>
+
 </body>
 </html>
