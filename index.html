@@ -2273,6 +2273,7 @@
     <label>Биография</label>
     <textarea id="editPlayerBio" placeholder="Краткая биография игрока..."></textarea>
     <button class="btn-submit" id="saveEditPlayerBtn">Сохранить изменения</button>
+    <button class="btn-danger" id="removePlayerFromTopBtn" style="display:none;">🗑 Удалить из Топ игроков</button>
   </div>
 </div>
 
@@ -2498,6 +2499,49 @@
     FILES: 'nexus_files'
   };
 
+  // Одноразовый полный сброс данных текущей базы. После сброса сайт остаётся полностью рабочим,
+  // но создаёт только пустое состояние без тестовых команд/турниров/игроков.
+  const LTL_DB_RESET_MARKER = 'ltl_database_reset_v2_done';
+  const LTL_DB_RESET_ENABLED = true;
+
+  function ltlClearLocalDatabaseKeys() {
+    const keep = new Set([STORAGE_KEYS.THEME, STORAGE_KEYS.VIEW_MODE]);
+    const remove = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && key.indexOf('nexus_') === 0 && !keep.has(key)) remove.push(key);
+    }
+    remove.forEach(k => localStorage.removeItem(k));
+    localStorage.removeItem('ltl_hidden_top_players');
+    localStorage.removeItem('ltl_current_route');
+  }
+
+  async function ltlResetDatabaseOnce() {
+    if (!LTL_DB_RESET_ENABLED || localStorage.getItem(LTL_DB_RESET_MARKER) === '1') return false;
+    try {
+      const sb = ltlGetSupabaseClient();
+      if (sb) {
+        const { data: rows, error } = await sb.from('ltl_state').select('key');
+        if (error) throw error;
+        for (const row of (rows || [])) {
+          if (row?.key && ltlIsSharedKey(row.key)) {
+            const { error: delError } = await sb.from('ltl_state').delete().eq('key', row.key);
+            if (delError) throw delError;
+          }
+        }
+      }
+      ltlApplyingRemote = true;
+      ltlClearLocalDatabaseKeys();
+      ltlApplyingRemote = false;
+      localStorage.setItem(LTL_DB_RESET_MARKER, '1');
+      return true;
+    } catch (e) {
+      ltlApplyingRemote = false;
+      console.error('Полный сброс базы не выполнен:', e);
+      return false;
+    }
+  }
+
   // ===== SUPABASE DATABASE / REALTIME СИНХРОНИЗАЦИЯ =====
   // Общие данные сайта больше НЕ используют /api/state и /api/events.
   // Все nexus_* ключи хранятся в public.ltl_state и синхронизируются через Supabase Realtime.
@@ -2653,6 +2697,9 @@
 
   async function ltlBootstrapBackend() {
     const sb = ltlGetSupabaseClient();
+    if (LTL_DB_RESET_ENABLED && localStorage.getItem(LTL_DB_RESET_MARKER) !== '1') {
+      await ltlResetDatabaseOnce();
+    }
     if (!sb) {
       ltlBackendReady = false;
       console.warn('Supabase не настроен. Проверьте supabase-config.js');
@@ -3594,7 +3641,7 @@
         <div class="player-rating-edit"><input class="player-rating-input" data-team-id="${p.teamId}" data-player-name="${p.name}" type="number" value="${p.lts}" min="0" step="1"></div>
       ` : `<div class="player-rating">⭐ ${p.lts} LTS</div>`;
       return `
-        <div class="card top-player-card ${borderClass}" data-top-player-name="${escHtml(p.name)}" onclick="${!isPlayerRankEditMode ? `window.openPlayerFromTop(${JSON.stringify(p.name)})` : ''}" style="${isPlayerRankEditMode ? 'cursor:default;' : 'cursor:pointer;'}">
+        <div class="card top-player-card ${borderClass}" data-top-player-name="${escHtml(p.name)}" onclick="window.openPlayerFromTop(${JSON.stringify(p.name)})" style="cursor:pointer;">
           ${medalHtml}
           <div class="player-rank-num ${rankClass}">#${i+1}</div>
           <div class="player-avatar-big ${avatarClass}" style="overflow:hidden;display:grid;place-items:center;">${playerAvatarMarkup(p.name, 'player-avatar-shared', '')}</div>
@@ -5962,6 +6009,11 @@
       } else if (avatarPreview) {
         avatarPreview.style.display = 'none';
       }
+      const removeTopBtn = document.getElementById('removePlayerFromTopBtn');
+      if (removeTopBtn) {
+        removeTopBtn.style.display = currentRole === ROLES.HEAD ? 'block' : 'none';
+        removeTopBtn.dataset.playerName = data.name || editingPlayerName || '';
+      }
       const teamSelect = document.getElementById('editPlayerTeam');
       const teams = getTeams();
       teamSelect.innerHTML = '<option value="">Без команды</option>' + teams.map(team => `<option value="${String(team.id).replace(/"/g,'&quot;')}">${escHtml(team.name)}</option>`).join('');
@@ -5980,6 +6032,16 @@
       if (avatarInput) avatarInput.value = '';
       if (avatarPreview) avatarPreview.style.display = 'none';
       closeModal(document.getElementById('editPlayerModal'));
+    });
+    document.getElementById('removePlayerFromTopBtn')?.addEventListener('click', function() {
+      if (currentRole !== ROLES.HEAD) {
+        showNotification('Доступ запрещён', 'Удалять игроков из Топа может только Глава', 'fa-lock');
+        return;
+      }
+      const name = this.dataset.playerName || editingPlayerName || '';
+      if (!name) return;
+      closeModal(document.getElementById('editPlayerModal'));
+      window.removePlayerFromTop(name);
     });
     document.getElementById('editPlayerAvatarFile')?.addEventListener('change', function() {
       const file = this.files?.[0];
@@ -6393,8 +6455,8 @@
         const route = JSON.parse(localStorage.getItem('ltl_current_route') || 'null');
         if (route?.page) {
           if (route.nested === 'player' && route.teamId && route.playerName) {
-            navigateTo('teams', true);
-            window.showPlayerDetail(route.teamId, route.playerName);
+            const origin = route.origin === 'top-players' ? 'top-players' : 'teams';
+            window.showPlayerDetail(route.teamId, route.playerName, origin);
           } else {
             navigateTo(route.page, true);
           }
@@ -6418,6 +6480,7 @@
   window.showPlayerDetail = function(teamId, playerName, origin = 'teams') {
     origin = origin === 'top-players' ? 'top-players' : 'teams';
     playerDetailOrigin = origin;
+    try { localStorage.setItem('ltl_current_route', JSON.stringify({page: origin, nested:'player', teamId: teamId || null, playerName: playerName || '', origin})); } catch (_) {}
     const name = String(playerName || '').trim();
     if (!name) return;
 
