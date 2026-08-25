@@ -183,8 +183,10 @@
     .nav button:hover{background:var(--sidebar-hover);color:var(--sidebar-text)}
     .nav button.active{background:var(--sidebar-hover);color:var(--sidebar-text);box-shadow:inset 3px 0 var(--accent)}
     .nav button.active::after{transform:scaleY(1)}
-    .nav button i{margin-right:10px;width:20px;text-align:center}
-    .nav button .live-dot{display:inline-block;width:8px;height:8px;background:#34d399;border-radius:50%;margin-left:6px;animation:pulse-dot 1.5s infinite;vertical-align:middle}
+    /* РОВНОЕ ВЫРАВНИВАНИЕ ВСЕХ ПУНКТОВ САЙДБАРА */
+    .nav button{box-sizing:border-box;display:flex;align-items:center;min-height:58px}
+    .nav button i{flex:0 0 20px;width:20px;margin:0 10px 0 0;text-align:center}
+    .nav button .live-dot{position:absolute;right:16px;top:50%;transform:translateY(-50%);display:block;width:8px;height:8px;background:#34d399;border-radius:50%;margin:0;animation:pulse-dot 1.5s infinite;vertical-align:middle}
     .nav button .live-dot.offline{background:#888;animation:none}
     @keyframes pulse-dot{0%,100%{opacity:1;transform:scale(1)}50%{opacity:0.3;transform:scale(0.7)}}
     .sidebar-bottom{margin-top:auto;padding:16px 8px;color:var(--muted);font-size:12px;font-weight:600}
@@ -318,14 +320,17 @@
     .mobile-sidebar .brand-mobile-logo .logo-line-4 { font-size: 15px; color: var(--muted); letter-spacing: 3px; margin-top: -2px; }
     .mobile-sidebar .brand-mobile-logo .logo-plus { display: inline-block; font-size: 16px; color: var(--accent); margin: 0 4px; }
     .mobile-sidebar .nav-mobile{display:flex;flex-direction:column;gap:4px}
-    .mobile-sidebar .nav-mobile button{border:0;background:transparent;color:var(--muted);text-align:left;padding:14px 16px;border-radius:12px;transition:0.2s;width:100%;font-size:15px;cursor:pointer;font-weight:600;font-family:"Inter",sans-serif}
+    .mobile-sidebar .nav-mobile button{border:0;background:transparent;color:var(--muted);text-align:left;padding:14px 16px;border-radius:12px;transition:0.2s;width:100%;min-height:58px;box-sizing:border-box;display:flex;align-items:center;position:relative;font-size:15px;cursor:pointer;font-weight:600;font-family:"Inter",sans-serif}
     .mobile-sidebar .nav-mobile button:hover{background:var(--sidebar-hover);color:var(--sidebar-text)}
     .mobile-sidebar .nav-mobile button.active{background:var(--sidebar-hover);color:var(--sidebar-text)}
-    .mobile-sidebar .nav-mobile button i{margin-right:12px;width:24px;text-align:center}
-    .mobile-sidebar .nav-mobile button .live-dot{display:inline-block;width:8px;height:8px;background:#34d399;border-radius:50%;margin-left:6px;animation:pulse-dot 1.5s infinite;vertical-align:middle}
+    .mobile-sidebar .nav-mobile button i{flex:0 0 24px;width:24px;margin:0 12px 0 0;text-align:center}
+    .mobile-sidebar .nav-mobile button .live-dot{position:absolute;right:16px;top:50%;transform:translateY(-50%);display:block;width:8px;height:8px;background:#34d399;border-radius:50%;margin:0;animation:pulse-dot 1.5s infinite;vertical-align:middle}
     .mobile-sidebar .nav-mobile button .live-dot.offline{background:#888;animation:none}
     .mobile-sidebar .sidebar-bottom-mobile{margin-top:auto;padding:16px 8px;color:var(--muted);font-size:12px;border-top:1px solid rgba(255,255,255,0.05);margin-top:12px}
     .auth-buttons .hidden{display:none !important}
+    /* Авторизация в верхней панели: только иконка входа. Размеры существующих элементов не меняем. */
+    #authButtons .login,#authButtons .signup{display:none !important}
+    #authButtons{display:flex;align-items:center;gap:8px}
     .team-register-btn{background:var(--accent);color:#fff;border:none;padding:6px 14px;border-radius:12px;font-weight:700;font-size:12px;cursor:pointer;transition:all 0.3s;display:none;white-space:nowrap;flex-shrink:0}
     .team-register-btn:hover{opacity:0.9;transform:scale(1.02)}
     .team-register-btn.show{display:inline-flex;align-items:center;gap:4px}
@@ -1222,8 +1227,10 @@
     .auth-buttons{display:flex!important;align-items:center;gap:8px;position:relative;z-index:30}
     .auth-buttons .login,.auth-buttons .signup,.auth-buttons .icon-btn{pointer-events:auto;position:relative;z-index:31}
     .signup{min-width:108px;text-align:center}
-    .stream-nav-button{display:flex!important;align-items:center!important;gap:0!important}
-    .stream-nav-button i{margin-right:10px!important;margin-left:0!important;order:0!important}
+    .stream-nav-button{display:flex!important;align-items:center!important;gap:0!important;position:relative!important}
+    .stream-nav-button i{margin-right:10px!important;margin-left:0!important;order:0!important;flex:0 0 20px!important;width:20px!important}
+    .stream-nav-button .live-dot{position:absolute!important;right:16px!important;left:auto!important;top:50%!important;transform:translateY(-50%)!important;margin:0!important;order:0!important;flex:0 0 auto!important}
+    #streamNavBtnMobile .live-dot{position:static!important;transform:none!important;margin-left:6px!important;margin-right:0!important;flex:0 0 auto!important}
     .matches-table tbody tr{position:relative}
     .matches-table tbody tr:hover td{background:var(--bg2);border-top:2px solid var(--accent);border-bottom:2px solid var(--accent)}
     .matches-table tbody tr:hover td:first-child{border-left:2px solid var(--accent);border-radius:10px 0 0 10px}
@@ -1273,6 +1280,50 @@
 .auth-buttons-mobile.hidden{display:none !important;}
 </style>
 
+
+<style id="stream-panel-alignment-fix">
+/* Ровное выравнивание панели трансляции относительно остальных панелей */
+.stream-page{
+  width:100%;
+  margin:0;
+}
+.stream-page .stream-full{
+  width:100%;
+  max-width:none;
+  margin:0;
+  box-sizing:border-box;
+  border:1px solid var(--line);
+  border-radius:var(--radius);
+  padding:32px 36px;
+}
+.stream-page .stream-full .stream-header{
+  width:100%;
+  min-height:32px;
+  margin:0 0 20px;
+  display:flex;
+  align-items:center;
+}
+.stream-page #streamFullContent{
+  width:100%;
+}
+.stream-page .stream-placeholder,
+.stream-page .stream-active{
+  width:100%;
+  box-sizing:border-box;
+}
+.stream-page .stream-active iframe{
+  display:block;
+  width:100%;
+  max-width:100%;
+  box-sizing:border-box;
+}
+@media (max-width:700px){
+  .stream-page .stream-full{
+    padding:12px;
+    margin:0;
+  }
+}
+</style>
 </head>
 <body>
 
@@ -1308,7 +1359,7 @@
       <button data-page="ranking"><i class="fas fa-chart-line"></i> Рейтинг</button>
       <button data-page="top-players"><i class="fas fa-star"></i> Топ игроков</button>
       <button data-page="news"><i class="fas fa-newspaper"></i> Новости</button>
-      <button data-page="stream" id="streamNavBtn" class="stream-nav-button"><i class="fas fa-broadcast"></i> Трансляция <span class="live-dot" id="streamDot" style="display:none;"></span></button>
+      <button data-page="stream" id="streamNavBtn" class="stream-nav-button"><i class="fas fa-tv"></i> <span class="live-dot" id="streamDot" style="display:none;"></span> Трансляция</button>
       <button data-page="about" id="aboutNavBtn"><i class="fas fa-info-circle"></i> О сайте</button>
       <button data-page="profile" id="profileNavBtn"><i class="fas fa-user-circle"></i> Профиль</button>
     </nav>
@@ -1344,7 +1395,7 @@
       <button data-page="ranking"><i class="fas fa-chart-line"></i> Рейтинг</button>
       <button data-page="top-players"><i class="fas fa-star"></i> Топ игроков</button>
       <button data-page="news"><i class="fas fa-newspaper"></i> Новости</button>
-      <button data-page="stream" id="streamNavBtnMobile"><i class="fas fa-broadcast"></i> Трансляция <span class="live-dot" id="streamDotMobile" style="display:none;"></span></button>
+      <button data-page="stream" id="streamNavBtnMobile"><i class="fas fa-broadcast"></i> <span class="live-dot" id="streamDotMobile" style="display:none;"></span> Трансляция</button>
       <button data-page="about" id="aboutNavBtnMobile"><i class="fas fa-info-circle"></i> О сайте</button>
       <button data-page="profile" id="profileNavBtnMobile"><i class="fas fa-user-circle"></i> Профиль</button>
     </div>
@@ -1928,6 +1979,7 @@
               <button class="create-btn" style="font-size:13px; padding:8px 16px; background:var(--bg2); color:var(--ink); border:1px solid var(--line);" onclick="document.getElementById('addNewsBtn').click();"><i class="fas fa-plus"></i> Добавить новость</button>
               <button class="create-btn" style="font-size:13px; padding:8px 16px; background:var(--bg2); color:var(--ink); border:1px solid var(--line);" onclick="document.getElementById('createTeamBtn').click();"><i class="fas fa-plus"></i> Создать команду</button>
               <button class="create-btn" style="font-size:13px; padding:8px 16px; background:var(--bg2); color:var(--ink); border:1px solid var(--line);" onclick="document.getElementById('createMatchBtn').click();"><i class="fas fa-plus"></i> Создать матч</button>
+              <button class="create-btn admin-only" id="manageRostersBtn" style="font-size:13px; padding:8px 16px; background:var(--bg2); color:var(--ink); border:1px solid var(--line);"><i class="fas fa-user-plus"></i> Добавить игрока в команду</button>
             </div>
           </div>
         </div>
@@ -1993,6 +2045,21 @@
     <div style="text-align:center;margin-top:10px;font-size:12px;color:var(--muted);">
       <span id="totalUsersCount">Всего пользователей: 0</span>
     </div>
+  </div>
+</div>
+
+<!-- УПРАВЛЕНИЕ СОСТАВАМИ: только Глава и Администрация -->
+<div class="modal-overlay" id="manageRosterModal">
+  <div class="modal">
+    <button class="close-btn" id="closeManageRoster">&times;</button>
+    <h2>Добавить игрока в команду</h2>
+    <div class="sub">Выберите зарегистрированного пользователя и команду. Игрок не присоединяется автоматически.</div>
+    <label>Игрок</label>
+    <select id="rosterPlayerSelect"></select>
+    <label>Команда</label>
+    <select id="rosterTeamSelect"></select>
+    <div class="error-msg" id="rosterManageError"></div>
+    <button class="btn-submit" id="saveRosterPlayerBtn"><i class="fas fa-user-plus"></i> Добавить в состав</button>
   </div>
 </div>
 
@@ -3117,18 +3184,12 @@
         const userKey = username.toLowerCase();
         if (users[userKey] && users[userKey].role !== ROLES.HEAD) {
           users[userKey].role = newRole;
-          setUsers(users);
-          if (newRole === ROLES.PLAYER) {
-            let found = false;
-            const teams = getTeams();
-            teams.forEach(team => { if (team.roster && team.roster.includes(username)) found = true; });
-            if (!found && teams.length > 0) {
-              teams[0].roster.push(username);
-              setTeams(teams);
-              addPlayerToTop(username, teams[0].id);
-              renderTeams();
-            }
+          if (newRole !== ROLES.PLAYER && newRole !== ROLES.CAPTAIN) {
+            users[userKey].teamId = null;
           }
+          setUsers(users);
+          // Игрок после получения роли НЕ добавляется автоматически ни в одну команду.
+          // Состав назначается отдельно Главой или Администрацией через управление составами.
           renderRoleList();
           if (currentUser === username) {
             currentRole = newRole;
@@ -4637,7 +4698,7 @@
       const userKey = nick.toLowerCase();
       if (users[userKey]) { error.textContent = 'Аккаунт с таким ником уже существует'; error.classList.add('show'); return; }
       
-      users[userKey] = { username: nick, email: email, password: password, role: ROLES.GUEST, createdAt: new Date().toISOString(), avatar: null };
+      users[userKey] = { username: nick, email: email, password: password, role: ROLES.GUEST, teamId: null, createdAt: new Date().toISOString(), avatar: null };
       setUsers(users);
       loginUser(nick, ROLES.GUEST);
       closeModal(document.getElementById('registerModal'));
@@ -4649,6 +4710,121 @@
       showNotification('Аккаунт создан!', 'Добро пожаловать, ' + nick + '!', 'fa-user-plus');
     });
     
+    // Переходы между входом и регистрацией.
+    document.getElementById('switchToRegister').addEventListener('click', function(e) {
+      e.preventDefault();
+      closeModal(document.getElementById('loginModal'));
+      updateTotalUsersCount();
+      openModal(document.getElementById('registerModal'));
+    });
+    document.getElementById('switchToLogin').addEventListener('click', function(e) {
+      e.preventDefault();
+      closeModal(document.getElementById('registerModal'));
+      openModal(document.getElementById('loginModal'));
+    });
+
+    // ===== УПРАВЛЕНИЕ СОСТАВАМИ =====
+    function canManageRosters() {
+      return currentRole === ROLES.ADMIN || currentRole === ROLES.HEAD;
+    }
+
+    function populateRosterManagementSelects() {
+      const playerSelect = document.getElementById('rosterPlayerSelect');
+      const teamSelect = document.getElementById('rosterTeamSelect');
+      if (!playerSelect || !teamSelect) return;
+
+      const users = getUsers();
+      const teams = getTeams();
+      const rosterNames = new Set();
+      teams.forEach(team => (team.roster || []).forEach(name => rosterNames.add(String(name).toLowerCase())));
+
+      const candidates = Object.keys(users)
+        .map(key => users[key])
+        .filter(user => user && user.role !== ROLES.HEAD && !rosterNames.has(String(user.username || '').toLowerCase()))
+        .sort((a,b) => String(a.username).localeCompare(String(b.username), 'ru'));
+
+      playerSelect.innerHTML = candidates.length
+        ? '<option value="">Выберите игрока</option>' + candidates.map(user => `<option value="${String(user.username).replace(/"/g,'&quot;')}">${String(user.username).replace(/</g,'&lt;')}</option>`).join('')
+        : '<option value="">Нет свободных игроков</option>';
+
+      teamSelect.innerHTML = teams.length
+        ? '<option value="">Выберите команду</option>' + teams.map(team => `<option value="${String(team.id).replace(/"/g,'&quot;')}">${String(team.name).replace(/</g,'&lt;')}</option>`).join('')
+        : '<option value="">Нет доступных команд</option>';
+    }
+
+    function openRosterManagement() {
+      if (!canManageRosters()) {
+        showNotification('Доступ запрещён', 'Только Администратор или Глава', 'fa-lock');
+        return;
+      }
+      populateRosterManagementSelects();
+      const error = document.getElementById('rosterManageError');
+      error.classList.remove('show');
+      error.textContent = '';
+      openModal(document.getElementById('manageRosterModal'));
+    }
+
+    function addRegisteredPlayerToTeam(username, teamId) {
+      if (!canManageRosters()) {
+        showNotification('Доступ запрещён', 'Только Администратор или Глава', 'fa-lock');
+        return false;
+      }
+
+      const users = getUsers();
+      const userKey = String(username || '').toLowerCase();
+      const user = users[userKey];
+      if (!user) {
+        showNotification('Ошибка', 'Пользователь не найден', 'fa-times-circle');
+        return false;
+      }
+
+      const teams = getTeams();
+      const targetTeam = teams.find(team => String(team.id) === String(teamId));
+      if (!targetTeam) {
+        showNotification('Ошибка', 'Команда не найдена', 'fa-times-circle');
+        return false;
+      }
+
+      // Один аккаунт — максимум в одной команде. Старую принадлежность снимаем только при ручном назначении.
+      teams.forEach(team => {
+        team.roster = Array.isArray(team.roster) ? team.roster.filter(name => String(name).toLowerCase() !== userKey) : [];
+      });
+      targetTeam.roster.push(user.username);
+
+      // Сам факт назначения в состав переводит обычного зарегистрированного пользователя в игроки.
+      if (user.role === ROLES.GUEST) user.role = ROLES.PLAYER;
+      user.teamId = targetTeam.id;
+      users[userKey] = user;
+
+      setTeams(teams);
+      setUsers(users);
+      addPlayerToTop(user.username, targetTeam.id);
+      renderTeams();
+      renderTopPlayers();
+      if (typeof forceRenderAll === 'function') forceRenderAll();
+
+      showNotification('Игрок добавлен', user.username + ' добавлен в ' + targetTeam.name, 'fa-user-plus');
+      return true;
+    }
+
+    document.getElementById('manageRostersBtn')?.addEventListener('click', openRosterManagement);
+    document.getElementById('closeManageRoster')?.addEventListener('click', () => closeModal(document.getElementById('manageRosterModal')));
+    document.getElementById('saveRosterPlayerBtn')?.addEventListener('click', function() {
+      const username = document.getElementById('rosterPlayerSelect').value;
+      const teamId = document.getElementById('rosterTeamSelect').value;
+      const error = document.getElementById('rosterManageError');
+      error.classList.remove('show');
+      if (!username || !teamId) {
+        error.textContent = 'Выберите игрока и команду';
+        error.classList.add('show');
+        return;
+      }
+      if (addRegisteredPlayerToTeam(username, teamId)) {
+        closeModal(document.getElementById('manageRosterModal'));
+        populateRosterManagementSelects();
+      }
+    });
+
     // Выход
     document.getElementById('profileLogoutBtn').addEventListener('click', function() {
       showConfirm('Выход из аккаунта', 'Вы уверены, что хотите выйти?', logoutUser);
