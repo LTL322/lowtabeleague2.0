@@ -2542,14 +2542,14 @@
     }
   }
 
-  // ===== SUPABASE DATABASE / REALTIME СИНХРОНИЗАЦИЯ =====
-  // Общие данные сайта больше НЕ используют /api/state и /api/events.
-  // Все nexus_* ключи хранятся в public.ltl_state и синхронизируются через Supabase Realtime.
+  // ===== LTL V2: ЕДИНОЕ ХРАНИЛИЩЕ nexus_users =====
+  // Данные сайта больше не лежат в localStorage. localStorage используется только
+  // для UI-настроек/сессии. Источник истины — public.nexus_users через RPC.
   let ltlSupabase = null;
   let ltlBackendReady = false;
   let ltlApplyingRemote = false;
-  let ltlRealtimeChannel = null;
-  let ltlOnlineChannel = null;
+  let ltlState = {};
+  let ltlStatePoll = null;
 
   function ltlGetSupabaseClient() {
     if (ltlSupabase) return ltlSupabase;
@@ -2582,7 +2582,7 @@
       else if (typeof renderAll === 'function') renderAll();
       if (key === STORAGE_KEYS.USERS && typeof renderRoleList === 'function') renderRoleList();
       if (typeof updateTotalUsersCount === 'function') updateTotalUsersCount();
-    } catch (e) { console.warn('Realtime render error:', e); }
+    } catch (e) { console.warn('V2 render error:', e); }
   }
 
   async function ltlPushKey(key, value) {
@@ -2590,157 +2590,105 @@
     const sb = ltlGetSupabaseClient();
     if (!sb) return;
     try {
-      if (value === null || typeof value === 'undefined') {
-        const { error } = await sb.from('ltl_state').delete().eq('key', key);
-        if (error) throw error;
-      } else {
-        const parsed = typeof value === 'string' ? (() => {
-          try { return JSON.parse(value); } catch (_) { return value; }
-        })() : value;
-        const { error } = await sb.from('ltl_state').upsert({ key, value_json: parsed, updated_at: new Date().toISOString() }, { onConflict: 'key' });
-        if (error) throw error;
+      if (key === STORAGE_KEYS.USERS && currentRole !== ROLES.ADMIN && currentRole !== ROLES.HEAD) {
+        const profile = ltlState[key]?.[String(currentUser || '').toLowerCase()];
+        if (profile) {
+          await sb.rpc('nexus_update_my_profile', { p_profile: profile });
+        }
+        return;
       }
+      const parsed = typeof value === 'string' ? (() => { try { return JSON.parse(value); } catch (_) { return value; } })() : value;
+      const { error } = await sb.rpc('nexus_set_state', { p_key: key, p_value: parsed });
+      if (error) throw error;
     } catch (e) {
-      console.warn('Supabase write failed:', key, e);
+      console.warn('V2 Supabase write failed:', key, e);
     }
   }
 
-  // Перехватываем localStorage, сохраняя существующий функционал сайта.
-  // ВАЖНО: старые версии могли сохранить nexus_* в legacy-обёртке
-  // {value: ..., _ltType: ...}. Нормализуем значение прямо при чтении,
-  // чтобы любой существующий render-функционал получал обычную строку/JSON,
-  // даже если старое значение ещё не было переписано в базе.
+  // Перехват shared localStorage: данные остаются только в памяти страницы,
+  // а не в persistent localStorage.
   try {
     const _getItem = Storage.prototype.getItem;
     const _setItem = Storage.prototype.setItem;
     const _removeItem = Storage.prototype.removeItem;
     Storage.prototype.getItem = function(key) {
-      const raw = _getItem.call(this, key);
-      if (this === window.localStorage && ltlIsSharedKey(key) && raw != null) {
-        try {
-          const normalized = ltlUnwrapStoredValue(raw);
-          return typeof normalized === 'string' ? normalized : JSON.stringify(normalized);
-        } catch (_) {}
+      if (this === window.localStorage && ltlIsSharedKey(key)) {
+        if (!Object.prototype.hasOwnProperty.call(ltlState, key)) return null;
+        const v = ltlState[key];
+        return typeof v === 'string' ? v : JSON.stringify(v);
       }
-      return raw;
+      return _getItem.call(this, key);
     };
     Storage.prototype.setItem = function(key, value) {
+      if (this === window.localStorage && ltlIsSharedKey(key)) {
+        let parsed = value;
+        try { parsed = JSON.parse(value); } catch (_) {}
+        ltlState[key] = parsed;
+        if (!ltlApplyingRemote) ltlPushKey(key, parsed);
+        return;
+      }
       _setItem.call(this, key, value);
-      if (this === window.localStorage && ltlIsSharedKey(key)) ltlPushKey(key, value);
     };
     Storage.prototype.removeItem = function(key) {
+      if (this === window.localStorage && ltlIsSharedKey(key)) {
+        delete ltlState[key];
+        return;
+      }
       _removeItem.call(this, key);
-      if (this === window.localStorage && ltlIsSharedKey(key)) ltlPushKey(key, null);
     };
-  } catch (e) { console.warn('Storage sync hook unavailable:', e); }
-
-  function ltlConnectRealtime() {
-    const sb = ltlGetSupabaseClient();
-    if (!sb || ltlRealtimeChannel) return;
-    ltlRealtimeChannel = sb.channel('ltl-state-realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'ltl_state' }, payload => {
-        try {
-          ltlApplyingRemote = true;
-          if (payload.eventType === 'DELETE') {
-            const key = payload.old && payload.old.key;
-            if (key && ltlIsSharedKey(key)) {
-              localStorage.removeItem(key);
-              ltlRenderAfterRemoteSync(key);
-            }
-          } else {
-            const row = payload.new || {};
-            const key = row.key;
-            if (key && ltlIsSharedKey(key)) {
-              const value = ltlUnwrapStoredValue(row.value_json);
-              localStorage.setItem(key, typeof value === 'string' ? value : JSON.stringify(value));
-              ltlRenderAfterRemoteSync(key);
-            }
-          }
-        } catch (e) {
-          console.warn('Supabase realtime event error:', e);
-        } finally {
-          ltlApplyingRemote = false;
-        }
-      })
-      .subscribe((status) => {
-        if (status === 'SUBSCRIBED') console.log('LTL Supabase realtime connected');
-        else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') console.warn('LTL Supabase realtime status:', status);
-      });
-  }
-
-  // Старые версии сайта сохраняли простые значения в value_json как
-  // {"value":"...","_ltType":"string"}. Распаковываем такой формат при
-  // чтении, чтобы UI получал обычную строку/массив/объект и не показывал
-  // сырой JSON пользователю.
-  function ltlUnwrapStoredValue(value) {
-    // Supabase JSONB may contain either the legacy wrapper object directly
-    // or that same wrapper serialized as a JSON string. Normalize both forms.
-    let current = value;
-    for (let i = 0; i < 3; i++) {
-      if (typeof current === 'string') {
-        const text = current.trim();
-        if (!text || (text[0] !== '{' && text[0] !== '[')) break;
-        try { current = JSON.parse(text); } catch (_) { break; }
-        continue;
-      }
-      if (current && typeof current === 'object' && !Array.isArray(current) &&
-          Object.prototype.hasOwnProperty.call(current, 'value') &&
-          (Object.prototype.hasOwnProperty.call(current, '_ltType') ||
-           Object.keys(current).length <= 2)) {
-        current = current.value;
-        continue;
-      }
-      break;
-    }
-    return current;
-  }
+  } catch (e) { console.warn('V2 Storage hook unavailable:', e); }
 
   async function ltlBootstrapBackend() {
     const sb = ltlGetSupabaseClient();
-    if (LTL_DB_RESET_ENABLED && localStorage.getItem(LTL_DB_RESET_MARKER) !== '1') {
-      await ltlResetDatabaseOnce();
-    }
-    if (!sb) {
-      ltlBackendReady = false;
-      console.warn('Supabase не настроен. Проверьте supabase-config.js');
-      return;
-    }
+    if (!sb) { ltlBackendReady = false; return; }
     try {
-      const { data: rows, error } = await sb.from('ltl_state').select('key,value_json');
-      if (error) throw error;
-      const remote = {};
-      (rows || []).forEach(row => {
-        if (row && ltlIsSharedKey(row.key)) {
-          remote[row.key] = ltlUnwrapStoredValue(row.value_json);
-        }
-      });
-
-      // Серверные данные имеют приоритет. Локальные ключи, которых ещё нет на сервере, отправляем один раз.
-      const local = {};
-      for (let i = 0; i < localStorage.length; i++) {
-        const k = localStorage.key(i);
-        if (ltlIsSharedKey(k)) local[k] = localStorage.getItem(k);
-      }
-
+      const isStaffSession = currentRole === ROLES.ADMIN || currentRole === ROLES.HEAD;
+      const stateCall = await sb.rpc(isStaffSession ? 'nexus_get_state' : 'nexus_get_public_state');
+      if (stateCall.error) throw stateCall.error;
+      const directoryCall = await sb.rpc('nexus_get_user_directory');
+      if (directoryCall.error) throw directoryCall.error;
       ltlApplyingRemote = true;
-      Object.keys(remote).forEach(k => {
-        const v = ltlUnwrapStoredValue(remote[k]);
-        localStorage.setItem(k, typeof v === 'string' ? v : JSON.stringify(v));
-      });
+      ltlState = (stateCall.data && typeof stateCall.data === 'object') ? stateCall.data : {};
+      ltlState[STORAGE_KEYS.USERS] = (directoryCall.data && typeof directoryCall.data === 'object') ? directoryCall.data : {};
+      if (currentUser && !isStaffSession) {
+        const meCall = await sb.rpc('nexus_get_my_profile');
+        if (!meCall.error && meCall.data && typeof meCall.data === 'object') {
+          ltlState[STORAGE_KEYS.USERS][String(currentUser).toLowerCase()] = meCall.data;
+        }
+      }
       ltlApplyingRemote = false;
       ltlBackendReady = true;
-
-      for (const k of Object.keys(local)) {
-        if (!Object.prototype.hasOwnProperty.call(remote, k)) await ltlPushKey(k, local[k]);
-      }
-
-      ltlConnectRealtime();
       ltlRenderAfterRemoteSync();
+
+      if (ltlState[STORAGE_KEYS.USERS] && currentUser) {
+        const me = ltlState[STORAGE_KEYS.USERS][String(currentUser).toLowerCase()];
+        if (me) currentRole = me.role || currentRole;
+      }
+      // Polling avoids exposing the full table through Realtime row payloads.
+      if (!ltlStatePoll) {
+        ltlStatePoll = setInterval(async () => {
+          try {
+            const isStaff = currentRole === ROLES.ADMIN || currentRole === ROLES.HEAD;
+            const freshCall = await sb.rpc(isStaff ? 'nexus_get_state' : 'nexus_get_public_state');
+            if (freshCall.error || !freshCall.data) return;
+            const directoryCall = await sb.rpc('nexus_get_user_directory');
+            if (directoryCall.error) return;
+            ltlApplyingRemote = true;
+            ltlState = freshCall.data;
+            ltlState[STORAGE_KEYS.USERS] = directoryCall.data || {};
+            if (currentUser && !isStaff) {
+              const meCall = await sb.rpc('nexus_get_my_profile');
+              if (!meCall.error && meCall.data) ltlState[STORAGE_KEYS.USERS][String(currentUser).toLowerCase()] = meCall.data;
+            }
+            ltlApplyingRemote = false;
+            ltlRenderAfterRemoteSync();
+          } catch (_) {}
+        }, 15000);
+      }
     } catch (e) {
       ltlApplyingRemote = false;
       ltlBackendReady = false;
-      console.error('Supabase database недоступна:', e);
-      console.warn('Проверьте, что таблица public.ltl_state создана и в supabase-config.js указан Publishable/anon key.');
+      console.error('LTL V2 storage недоступно:', e);
     }
   }
 
@@ -2925,8 +2873,11 @@
     if (!localStorage.getItem(STORAGE_KEYS.FILES)) localStorage.setItem(STORAGE_KEYS.FILES, JSON.stringify([]));
   }
 
-  function getUsers() { return JSON.parse(localStorage.getItem(STORAGE_KEYS.USERS)) || {}; }
-  function setUsers(users) { localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users)); }
+  function getUsers() { return (ltlState[STORAGE_KEYS.USERS] && typeof ltlState[STORAGE_KEYS.USERS] === 'object') ? ltlState[STORAGE_KEYS.USERS] : {}; }
+  function setUsers(users) {
+    ltlState[STORAGE_KEYS.USERS] = users || {};
+    if (ltlBackendReady) ltlPushKey(STORAGE_KEYS.USERS, ltlState[STORAGE_KEYS.USERS]);
+  }
   function getNews() { return JSON.parse(localStorage.getItem(STORAGE_KEYS.NEWS)) || []; }
   function setNews(news) { localStorage.setItem(STORAGE_KEYS.NEWS, JSON.stringify(news)); }
   function getMatches() { return JSON.parse(localStorage.getItem(STORAGE_KEYS.MATCHES)) || []; }
@@ -3115,10 +3066,6 @@
       if (user && user.avatar_url) return String(user.avatar_url);
       if (user && user.avatar) return String(user.avatar);
     } catch (_) {}
-    try {
-      const cached = localStorage.getItem(getAvatarKey(username));
-      if (cached && !String(cached).startsWith('data:')) return cached;
-    } catch (_) {}
     return '';
   }
 
@@ -3148,14 +3095,12 @@
     if (avatarUrl) {
       user.avatar_url = avatarUrl;
       user.avatar = avatarUrl; // совместимость со старым кодом
-      localStorage.setItem(getAvatarKey(currentUser), avatarUrl);
     } else {
       delete user.avatar_url;
       delete user.avatar;
-      localStorage.removeItem(getAvatarKey(currentUser));
     }
     users[userKey] = user;
-    setUsers(users); // nexus_users синхронизируется в Supabase + Realtime
+    setUsers(users); // nexus_users сохраняется через защищённый RPC
   }
 
   async function updateAvatar(avatarData) {
@@ -4926,8 +4871,9 @@
       const users = getUsers();
       const profile = users[username.toLowerCase()];
       if (!profile) { error.textContent = 'Пользователь не найден'; error.classList.add('show'); return; }
-      const email = profile.email || ltlAuthEmail(username);
-      const { error: authError } = await sb.auth.signInWithPassword({ email, password });
+      const { data: loginEmail, error: resolveError } = await sb.rpc('nexus_resolve_login', { p_username: username });
+      if (resolveError || !loginEmail) { error.textContent = 'Пользователь не найден'; error.classList.add('show'); return; }
+      const { error: authError } = await sb.auth.signInWithPassword({ email: loginEmail, password });
       if (authError) { error.textContent = 'Неверный логин или пароль'; error.classList.add('show'); return; }
       loginUser(username, profile.role || ROLES.GUEST);
       closeModal(document.getElementById('loginModal'));
@@ -4977,9 +4923,17 @@
         error.classList.add('show');
         return;
       }
-      // Пароль НИКОГДА не сохраняется в localStorage/Supabase ltl_state.
-      users[userKey] = { username: nick, email: email, role: ROLES.GUEST, teamId: null, createdAt: new Date().toISOString(), avatar: null };
-      setUsers(users);
+      const createdUserId = authData?.user?.id;
+      if (createdUserId) {
+        const { error: profileError } = await sb.rpc('nexus_create_profile', { p_user_id: createdUserId, p_username: nick, p_email: email });
+        if (profileError) {
+          error.textContent = profileError.message || 'Не удалось сохранить профиль';
+          error.classList.add('show');
+          return;
+        }
+      }
+      users[userKey] = { username: nick, email: email, role: ROLES.GUEST, teamId: null, createdAt: new Date().toISOString(), avatar: null, authUserId: createdUserId || null };
+      ltlState[STORAGE_KEYS.USERS] = users;
       loginUser(nick, ROLES.GUEST);
       closeModal(document.getElementById('registerModal'));
       document.getElementById('regNick').value = '';
@@ -5714,6 +5668,11 @@
       }
       
       if (newName && newName !== currentUser) {
+        if (currentRole !== ROLES.ADMIN && currentRole !== ROLES.HEAD) {
+          settingsError.textContent = 'Изменение никнейма отключено в защищённой версии';
+          settingsError.classList.add('show');
+          return;
+        }
         if (users[newName.toLowerCase()]) {
           settingsError.textContent = 'Никнейм уже занят';
           settingsError.classList.add('show');
@@ -5726,8 +5685,7 @@
         users[newName.toLowerCase()] = userData;
         if (savedAvatar) {
           localStorage.setItem(getAvatarKey(newName), savedAvatar);
-          localStorage.removeItem(getAvatarKey(currentUser));
-        }
+            }
         setUsers(users);
         
         const session = JSON.parse(localStorage.getItem(STORAGE_KEYS.SESSION) || '{}');
