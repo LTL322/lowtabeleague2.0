@@ -2251,6 +2251,9 @@
     <input type="text" id="editPlayerName" placeholder="Micke">
     <label>Роль</label>
     <input type="text" id="editPlayerRole" placeholder="Carry">
+    <label>Команда</label>
+    <select id="editPlayerTeam"><option value="">Без команды</option></select>
+    <div style="font-size:12px;color:var(--muted);margin-top:4px;">Выберите команду — игрок автоматически добавится в её состав. «Без команды» оставляет игрока в Топ игроков.</div>
     <label>Сыграно матчей</label>
     <input type="number" id="editPlayerMatches" placeholder="0">
     <label>Победы</label>
@@ -2749,6 +2752,7 @@
   let editingTeamId = null;
   let editingPlayerName = null;
   let editingPlayerTeamId = null;
+  let playerDetailOrigin = 'teams';
   let editingMatchId = null;
   let editingTournamentId = null;
   let isRankEditMode = false;
@@ -3188,8 +3192,10 @@
             users[userKey].teamId = null;
           }
           setUsers(users);
-          // Игрок после получения роли НЕ добавляется автоматически ни в одну команду.
-          // Состав назначается отдельно Главой или Администрацией через управление составами.
+          if (newRole === ROLES.PLAYER) {
+            addPlayerToTop(users[userKey].username, users[userKey].teamId || null);
+          }
+          renderTopPlayers();
           renderRoleList();
           if (currentUser === username) {
             currentRole = newRole;
@@ -3505,7 +3511,8 @@
         window.showPlayerDetail(editingPlayerTeamId, editingPlayerName);
       }
       if (page.id === 'top-players') {
-        renderTopPlayers();
+        if (document.getElementById('playerDetailPage')?.classList.contains('active') && editingPlayerName) window.showPlayerDetail(editingPlayerTeamId, editingPlayerName, 'top-players');
+        else renderTopPlayers();
       }
       if (page.id === 'ranking') {
         renderRanking();
@@ -3554,17 +3561,7 @@
   }
 
   function renderTopPlayers() {
-    const players = getPlayers();
-    const teams = getTeams();
-    const allPlayers = [];
-    teams.forEach(team => {
-      if (team.roster) {
-        team.roster.forEach(playerName => {
-          const data = getPlayerData(team.id, playerName);
-          allPlayers.push({ name: playerName, team: team.name, teamId: team.id, lts: data.lts || 0, rating: data.rating || 1000, matches: data.matches || 0, wins: data.wins || 0, losses: data.losses || 0 });
-        });
-      }
-    });
+    const allPlayers = getTopPlayersData();
     allPlayers.sort((a, b) => (b.lts || 0) - (a.lts || 0));
     const top = allPlayers.slice(0, 12);
     const grid = document.getElementById('topPlayersGrid');
@@ -3579,7 +3576,7 @@
         <div class="player-rating-edit"><input class="player-rating-input" data-team-id="${p.teamId}" data-player-name="${p.name}" type="number" value="${p.lts}" min="0" step="1"></div>
       ` : `<div class="player-rating">⭐ ${p.lts} LTS</div>`;
       return `
-        <div class="card top-player-card ${borderClass}" onclick="${!isPlayerRankEditMode ? `window.openPlayerFromMatch('${p.name}', '${p.team}')` : ''}" style="${isPlayerRankEditMode ? 'cursor:default;' : 'cursor:pointer;'}">
+        <div class="card top-player-card ${borderClass}" onclick="${!isPlayerRankEditMode ? `window.openPlayerFromTop('${p.name}')` : ''}" style="${isPlayerRankEditMode ? 'cursor:default;' : 'cursor:pointer;'}">
           ${medalHtml}
           <div class="player-rank-num ${rankClass}">#${i+1}</div>
           <div class="player-avatar-big ${avatarClass}" style="overflow:hidden;display:grid;place-items:center;">${playerAvatarMarkup(p.name, 'player-avatar-shared', '')}</div>
@@ -3890,15 +3887,71 @@
 
   function autoStartTimer() { /* Автозапуск таймера отключён. Таймер запускается только вручную. */ }
 
-  function addPlayerToTop(playerName, teamId) {
+  function playerStorageKey(teamId, playerName) {
+    return String(teamId || 'free') + '_' + String(playerName || '');
+  }
+
+  function ensurePlayerProfile(playerName, teamId = null, silent = true) {
     const players = getPlayers();
-    const key = teamId + '_' + playerName;
+    const key = playerStorageKey(teamId, playerName);
     if (!players[key]) {
-      players[key] = { name: playerName, teamId: teamId, role: 'Игрок', matches: 0, wins: 0, losses: 0, earnings: '0 ₽', bio: 'Биография игрока пока не заполнена.', rating: 1000, lts: 0 };
+      players[key] = { name: playerName, teamId: teamId || null, role: 'Игрок', matches: 0, wins: 0, losses: 0, earnings: '0 ₽', bio: 'Биография игрока пока не заполнена.', rating: 1000, lts: 0 };
       setPlayers(players);
-      renderTopPlayers();
-      showNotification('Игрок добавлен в топ!', playerName + ' теперь в рейтинге LTS', 'fa-star');
+      if (!silent) showNotification('Игрок добавлен в топ!', playerName + ' теперь отображается в Топ игроков', 'fa-star');
+    } else if (players[key].teamId !== (teamId || null)) {
+      players[key].teamId = teamId || null;
+      setPlayers(players);
     }
+    return players[key];
+  }
+
+  function addPlayerToTop(playerName, teamId) {
+    const data = ensurePlayerProfile(playerName, teamId, false);
+    renderTopPlayers();
+    return data;
+  }
+
+  function getTopPlayersData() {
+    const teams = getTeams();
+    const users = getUsers();
+    const playersStore = getPlayers();
+    const result = [];
+    const seen = new Set();
+
+    Object.keys(users).forEach(key => {
+      const user = users[key];
+      if (!user || user.role !== ROLES.PLAYER || !user.username) return;
+      const team = teams.find(t => String(t.id) === String(user.teamId));
+      const data = ensurePlayerProfile(user.username, user.teamId || null, true);
+      const unique = String(user.username).toLowerCase();
+      if (seen.has(unique)) return;
+      seen.add(unique);
+      result.push({ name:user.username, team:team ? team.name : 'Без команды', teamId:team ? team.id : null,
+        lts:data.lts || 0, rating:data.rating || 1000, matches:data.matches || 0, wins:data.wins || 0, losses:data.losses || 0 });
+    });
+
+    Object.keys(playersStore).forEach(key => {
+      const data = playersStore[key];
+      if (!data || !data.name) return;
+      const unique = String(data.name).toLowerCase();
+      if (seen.has(unique)) return;
+      const team = teams.find(t => String(t.id) === String(data.teamId));
+      const isRosterPlayer = team && (team.roster || []).some(n => String(n).toLowerCase() === unique);
+      if (!isRosterPlayer && data.role !== 'Игрок') return;
+      seen.add(unique);
+      result.push({ name:data.name, team:team ? team.name : 'Без команды', teamId:team ? team.id : null,
+        lts:data.lts || 0, rating:data.rating || 1000, matches:data.matches || 0, wins:data.wins || 0, losses:data.losses || 0 });
+    });
+
+    teams.forEach(team => (team.roster || []).forEach(playerName => {
+      const unique = String(playerName).toLowerCase();
+      if (seen.has(unique)) return;
+      const data = ensurePlayerProfile(playerName, team.id, true);
+      seen.add(unique);
+      result.push({ name:playerName, team:team.name, teamId:team.id, lts:data.lts || 0, rating:data.rating || 1000,
+        matches:data.matches || 0, wins:data.wins || 0, losses:data.losses || 0 });
+    }));
+    return result;
   }
 
   function navigateTo(pageId, fromBack = false) {
@@ -4212,10 +4265,19 @@
     document.getElementById('teamDetailPage').classList.add('active');
   };
   
-  window.showPlayerDetail = function(teamId, playerName) {
-    navigateTo('teams', true);
-    const data = getPlayerData(teamId, playerName);
-    const team = getTeams().find(t => t.id === teamId);
+  function mountPlayerDetail(origin) {
+    const detail = document.getElementById('playerDetailPage');
+    const target = origin === 'top-players' ? document.getElementById('top-players') : document.getElementById('teams');
+    if (detail && target && detail.parentElement !== target) target.appendChild(detail);
+  }
+
+  window.showPlayerDetail = function(teamId, playerName, origin = 'teams') {
+    playerDetailOrigin = origin;
+    mountPlayerDetail(origin);
+    if (origin === 'teams') navigateTo('teams', true);
+    else navigateTo('top-players', true);
+    const team = teamId ? getTeams().find(t => String(t.id) === String(teamId)) : null;
+    const data = teamId ? getPlayerData(teamId, playerName) : ensurePlayerProfile(playerName, null, true);
     document.getElementById('playerAvatarBig').innerHTML = playerAvatarMarkup(playerName, 'player-avatar-shared', '');
     document.getElementById('playerAvatarBig').style.overflow = 'hidden';
     document.getElementById('playerAvatarBig').style.display = 'grid';
@@ -4230,7 +4292,7 @@
     document.getElementById('playerBio').textContent = data.bio || 'Биография игрока пока не заполнена.';
     editingPlayerName = playerName;
     editingPlayerTeamId = teamId;
-    const highlights = getHighlights()[teamId + '_' + playerName] || [];
+    const highlights = getHighlights()[playerStorageKey(teamId, playerName)] || [];
     const highlightsGrid = document.getElementById('highlightsGrid');
     if (highlights.length === 0) {
       highlightsGrid.innerHTML = '<p style="color:var(--muted); font-size:14px;">Пока нет добавленных моментов</p>';
@@ -4245,17 +4307,31 @@
     const isAdmin = currentRole === ROLES.ADMIN || currentRole === ROLES.HEAD;
     document.getElementById('playerAdminControls').style.display = isAdmin ? 'block' : 'none';
     document.getElementById('addHighlightContainer').style.display = isAdmin ? 'block' : 'none';
-    document.getElementById('teamDetailPage').style.display = 'none';
     document.getElementById('playerDetailPage').classList.add('active');
-    document.getElementById('teamsGrid').style.display = 'none';
-    document.getElementById('teamDetailPage').style.display = 'none';
-    document.getElementById('teamDetailPage').classList.remove('active');
-    document.getElementById('playerDetailPage').classList.add('active');
+    if (origin === 'top-players') {
+      document.getElementById('topPlayersGrid').style.display = 'none';
+      document.querySelector('#top-players .section-head').style.display = 'none';
+      document.getElementById('teamDetailPage').style.display = 'none';
+      document.getElementById('teamsGrid').style.display = 'none';
+    } else {
+      document.getElementById('teamDetailPage').style.display = 'none';
+      document.getElementById('teamsGrid').style.display = 'none';
+    }
     try {
-      localStorage.setItem('ltl_current_route', JSON.stringify({page:'teams', nested:'player', teamId, playerName, at:Date.now()}));
+      localStorage.setItem('ltl_current_route', JSON.stringify({page:origin, nested:'player', teamId, playerName, at:Date.now()}));
     } catch(e) {}
   };
   
+  window.openPlayerFromTop = function(playerName) {
+    const users = getUsers();
+    const user = users[String(playerName).toLowerCase()];
+    const teams = getTeams();
+    let team = user && user.teamId ? teams.find(t => String(t.id) === String(user.teamId)) : null;
+    if (!team) team = teams.find(t => (t.roster || []).some(n => String(n).toLowerCase() === String(playerName).toLowerCase()));
+    if (!team) ensurePlayerProfile(playerName, null, true);
+    window.showPlayerDetail(team ? team.id : null, playerName, 'top-players');
+  };
+
   window.openPlayerFromMatch = function(playerName, teamName) {
     const team = getTeams().find(t => t.name === teamName);
     if (!team) { showNotification('Игрок не найден', 'Команда ' + teamName + ' не найдена', 'fa-exclamation-triangle'); return; }
@@ -5067,7 +5143,15 @@
     });
     document.getElementById('backToTeamBtn').addEventListener('click', function() {
       document.getElementById('playerDetailPage').classList.remove('active');
-      document.getElementById('teamDetailPage').style.display = 'block';
+      document.getElementById('playerDetailPage').style.display = 'none';
+      if (playerDetailOrigin === 'top-players') {
+        document.getElementById('topPlayersGrid').style.display = 'grid';
+        document.querySelector('#top-players .section-head').style.display = 'flex';
+        navigateTo('top-players', true);
+      } else {
+        document.getElementById('teamDetailPage').style.display = 'block';
+        document.getElementById('teamDetailPage').classList.add('active');
+      }
     });
     document.getElementById('closeMatchModal').addEventListener('click', () => closeModal(document.getElementById('createMatchModal')));
     document.getElementById('createMatchModal').addEventListener('click', function(e) {
@@ -5793,6 +5877,11 @@
       const data = getPlayerData(editingPlayerTeamId, editingPlayerName);
       document.getElementById('editPlayerName').value = data.name;
       document.getElementById('editPlayerRole').value = data.role || 'Игрок';
+      const teamSelect = document.getElementById('editPlayerTeam');
+      const teams = getTeams();
+      teamSelect.innerHTML = '<option value="">Без команды</option>' + teams.map(team => `<option value="${String(team.id).replace(/"/g,'&quot;')}">${escHtml(team.name)}</option>`).join('');
+      const currentTeamId = data.teamId || editingPlayerTeamId || null;
+      teamSelect.value = currentTeamId && teams.some(t => String(t.id) === String(currentTeamId)) ? currentTeamId : '';
       document.getElementById('editPlayerMatches').value = data.matches || 0;
       document.getElementById('editPlayerWins').value = data.wins || 0;
       document.getElementById('editPlayerLosses').value = data.losses || 0;
@@ -5804,39 +5893,53 @@
     document.getElementById('saveEditPlayerBtn').addEventListener('click', function() {
       const name = document.getElementById('editPlayerName').value.trim();
       if (!name) { showNotification('Ошибка', 'Введите имя игрока', 'fa-times-circle'); return; }
+      const selectedTeamId = document.getElementById('editPlayerTeam').value || null;
+      const oldName = editingPlayerName;
+      const oldTeamId = editingPlayerTeamId;
+      const players = getPlayers();
+      const sourceKey = playerStorageKey(oldTeamId, oldName);
+      const legacyKey = oldTeamId + '_' + oldName;
+      const sourceData = players[sourceKey] || players[legacyKey] || getPlayerData(oldTeamId, oldName);
       const data = {
-        name: name,
-        teamId: editingPlayerTeamId,
-        role: document.getElementById('editPlayerRole').value.trim() || 'Игрок',
-        matches: parseInt(document.getElementById('editPlayerMatches').value) || 0,
-        wins: parseInt(document.getElementById('editPlayerWins').value) || 0,
-        losses: parseInt(document.getElementById('editPlayerLosses').value) || 0,
-        earnings: document.getElementById('editPlayerEarnings').value.trim() || '0 ₽',
-        bio: document.getElementById('editPlayerBio').value.trim() || 'Биография игрока пока не заполнена.'
+        ...sourceData, name, teamId:selectedTeamId,
+        role:document.getElementById('editPlayerRole').value.trim() || 'Игрок',
+        matches:parseInt(document.getElementById('editPlayerMatches').value) || 0,
+        wins:parseInt(document.getElementById('editPlayerWins').value) || 0,
+        losses:parseInt(document.getElementById('editPlayerLosses').value) || 0,
+        earnings:document.getElementById('editPlayerEarnings').value.trim() || '0 ₽',
+        bio:document.getElementById('editPlayerBio').value.trim() || 'Биография игрока пока не заполнена.'
       };
-      savePlayerData(editingPlayerTeamId, editingPlayerName, data);
-      if (name !== editingPlayerName) {
-        const teams = getTeams();
-        const team = teams.find(t => t.id === editingPlayerTeamId);
-        if (team) {
-          const idx = team.roster.indexOf(editingPlayerName);
-          if (idx !== -1) { team.roster[idx] = name; setTeams(teams); }
-        }
-        const players = getPlayers();
-        const oldKey = editingPlayerTeamId + '_' + editingPlayerName;
-        const newKey = editingPlayerTeamId + '_' + name;
-        if (players[oldKey]) {
-          players[newKey] = players[oldKey];
-          players[newKey].name = name;
-          delete players[oldKey];
-          setPlayers(players);
-        }
-        editingPlayerName = name;
+
+      const teams = getTeams();
+      teams.forEach(team => {
+        team.roster = Array.isArray(team.roster) ? team.roster.filter(n => String(n).toLowerCase() !== String(oldName).toLowerCase() && String(n).toLowerCase() !== String(name).toLowerCase()) : [];
+      });
+      if (selectedTeamId) {
+        const targetTeam = teams.find(t => String(t.id) === String(selectedTeamId));
+        if (targetTeam) targetTeam.roster.push(name);
       }
+      setTeams(teams);
+
+      const users = getUsers();
+      const oldUserKey = String(oldName).toLowerCase();
+      const newUserKey = String(name).toLowerCase();
+      const user = users[oldUserKey] || users[newUserKey];
+      if (user) {
+        if (oldUserKey !== newUserKey) delete users[oldUserKey];
+        user.username = name; user.role = ROLES.PLAYER; user.teamId = selectedTeamId;
+        users[newUserKey] = user; setUsers(users);
+      }
+
+      delete players[sourceKey]; delete players[legacyKey];
+      players[playerStorageKey(selectedTeamId, name)] = data;
+      setPlayers(players);
+
+      editingPlayerName = name;
+      editingPlayerTeamId = selectedTeamId;
       closeModal(document.getElementById('editPlayerModal'));
       forceRenderAll();
-      window.showPlayerDetail(editingPlayerTeamId, editingPlayerName);
-      showNotification('Данные обновлены!', 'Информация об игроке сохранена', 'fa-save');
+      window.showPlayerDetail(selectedTeamId, name, playerDetailOrigin);
+      showNotification('Данные обновлены!', selectedTeamId ? 'Игрок перенесён в выбранную команду' : 'Игрок оставлен без команды и сохранён в Топ игроков', 'fa-save');
     });
 
     // Хайлайты
@@ -5856,7 +5959,7 @@
       const btn = document.getElementById('saveHighlightBtn');
       const oldText = btn.textContent; btn.disabled = true; btn.textContent = 'Загрузка видео...';
       try {
-        const key = editingPlayerTeamId + '_' + editingPlayerName;
+        const key = playerStorageKey(editingPlayerTeamId, editingPlayerName);
         const uploaded = await ltlUploadMedia(file, 'highlights/' + ltlSafeFileName(key));
         const highlights = getHighlights();
         if (!highlights[key]) highlights[key] = [];
