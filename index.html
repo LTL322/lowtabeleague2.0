@@ -555,6 +555,8 @@
     .top-player-card .player-rating-edit input:focus{border-color:var(--accent);outline:none}
     .top-player-card .player-rating-edit button{padding:2px 10px;border-radius:4px;border:none;background:var(--accent);color:#fff;font-weight:600;font-size:11px;cursor:pointer}
     .top-player-card .player-rating-edit button:hover{opacity:0.85}
+    .top-player-card .top-player-delete-btn{margin-top:10px;padding:6px 10px;border-radius:8px;border:1px solid #ef5350;background:transparent;color:#ef5350;font-size:11px;font-weight:700;cursor:pointer;transition:.2s;}
+    .top-player-card .top-player-delete-btn:hover{background:#ef5350;color:#fff;}
     
     .news{display:grid;grid-template-columns:1.3fr .7fr;gap:14px}
     .news-card{padding:22px;cursor:pointer;transition:all .3s}
@@ -2251,6 +2253,12 @@
     <input type="text" id="editPlayerName" placeholder="Micke">
     <label>Роль</label>
     <input type="text" id="editPlayerRole" placeholder="Carry">
+    <label>Аватар игрока</label>
+    <input type="file" id="editPlayerAvatarFile" accept="image/*">
+    <div id="editPlayerAvatarPreview" style="display:none;margin-top:8px;align-items:center;gap:10px;">
+      <img id="editPlayerAvatarPreviewImg" src="" alt="Аватар игрока" style="width:52px;height:52px;border-radius:50%;object-fit:cover;border:1px solid var(--line);">
+      <span style="font-size:12px;color:var(--muted);">Новый аватар будет установлен после сохранения.</span>
+    </div>
     <label>Команда</label>
     <select id="editPlayerTeam"><option value="">Без команды</option></select>
     <div style="font-size:12px;color:var(--muted);margin-top:4px;">Выберите команду — игрок автоматически добавится в её состав. «Без команды» оставляет игрока в Топ игроков.</div>
@@ -3135,7 +3143,17 @@
   }
 
   function getPlayerAvatarUrl(username) {
-    return getSharedUserAvatar(username);
+    const shared = getSharedUserAvatar(username);
+    if (shared) return shared;
+    try {
+      const target = String(username || '').toLowerCase();
+      const players = getPlayers();
+      for (const key of Object.keys(players)) {
+        const data = players[key];
+        if (data && data.name && String(data.name).toLowerCase() === target && data.avatar_url) return String(data.avatar_url);
+      }
+    } catch (_) {}
+    return '';
   }
 
   function playerAvatarMarkup(username, className, extraClass='') {
@@ -3576,17 +3594,28 @@
         <div class="player-rating-edit"><input class="player-rating-input" data-team-id="${p.teamId}" data-player-name="${p.name}" type="number" value="${p.lts}" min="0" step="1"></div>
       ` : `<div class="player-rating">⭐ ${p.lts} LTS</div>`;
       return `
-        <div class="card top-player-card ${borderClass}" onclick="${!isPlayerRankEditMode ? `window.openPlayerFromTop('${p.name}')` : ''}" style="${isPlayerRankEditMode ? 'cursor:default;' : 'cursor:pointer;'}">
+        <div class="card top-player-card ${borderClass}" data-top-player-name="${escHtml(p.name)}" onclick="${!isPlayerRankEditMode ? `window.openPlayerFromTop(${JSON.stringify(p.name)})` : ''}" style="${isPlayerRankEditMode ? 'cursor:default;' : 'cursor:pointer;'}">
           ${medalHtml}
           <div class="player-rank-num ${rankClass}">#${i+1}</div>
           <div class="player-avatar-big ${avatarClass}" style="overflow:hidden;display:grid;place-items:center;">${playerAvatarMarkup(p.name, 'player-avatar-shared', '')}</div>
-          <div class="player-name">${p.name}</div>
-          <div class="player-team-name">${p.team}</div>
+          <div class="player-name">${escHtml(p.name)}</div>
+          <div class="player-team-name">${escHtml(p.team)}</div>
           ${ratingHtml}
           <div class="player-stats-mini"><span>Матчи: <span>${p.matches}</span></span><span>Победы: <span>${p.wins}</span></span></div>
+          ${currentRole === ROLES.HEAD ? `<button type="button" class="top-player-delete-btn" data-delete-top-player="${escHtml(p.name)}"><i class="fas fa-trash"></i> Удалить из топа</button>` : ''}
         </div>
       `;
     }).join('');
+
+    if (currentRole === ROLES.HEAD) {
+      grid.querySelectorAll('.top-player-delete-btn').forEach(btn => {
+        btn.addEventListener('click', function(e) {
+          e.preventDefault();
+          e.stopPropagation();
+          window.removePlayerFromTop(this.dataset.deleteTopPlayer || '');
+        });
+      });
+    }
   }
 
   function renderNews() {
@@ -3891,6 +3920,45 @@
     return String(teamId || 'free') + '_' + String(playerName || '');
   }
 
+  const TOP_PLAYERS_HIDDEN_KEY = 'ltl_hidden_top_players';
+
+  function getHiddenTopPlayers() {
+    try {
+      const raw = JSON.parse(localStorage.getItem(TOP_PLAYERS_HIDDEN_KEY) || '[]');
+      return Array.isArray(raw) ? raw.map(v => String(v).toLowerCase()) : [];
+    } catch (e) { return []; }
+  }
+
+  function setHiddenTopPlayers(list) {
+    localStorage.setItem(TOP_PLAYERS_HIDDEN_KEY, JSON.stringify(Array.from(new Set(list.map(v => String(v).toLowerCase())))));
+  }
+
+  function isTopPlayerHidden(playerName) {
+    return getHiddenTopPlayers().includes(String(playerName || '').toLowerCase());
+  }
+
+  function restorePlayerInTop(playerName) {
+    const key = String(playerName || '').toLowerCase();
+    if (!key) return;
+    setHiddenTopPlayers(getHiddenTopPlayers().filter(v => v !== key));
+  }
+
+  window.removePlayerFromTop = function(playerName) {
+    if (currentRole !== ROLES.HEAD) {
+      showNotification('Доступ запрещён', 'Удалять игроков из Топа может только Глава', 'fa-lock');
+      return;
+    }
+    const name = String(playerName || '').trim();
+    if (!name) return;
+    showConfirm('Удаление из Топ игроков', `Убрать игрока «${name}» из Топ игроков? Аккаунт, команда и статистика сохранятся.`, function() {
+      const hidden = getHiddenTopPlayers();
+      hidden.push(name);
+      setHiddenTopPlayers(hidden);
+      renderTopPlayers();
+      showNotification('Игрок убран из Топа', `${name} больше не отображается в Топ игроков`, 'fa-trash');
+    });
+  };
+
   function ensurePlayerProfile(playerName, teamId = null, silent = true) {
     const players = getPlayers();
     const key = playerStorageKey(teamId, playerName);
@@ -3906,6 +3974,8 @@
   }
 
   function addPlayerToTop(playerName, teamId) {
+    // Получение роли «Игрок» всегда возвращает игрока в Топ, даже если его ранее убрали вручную.
+    restorePlayerInTop(playerName);
     const data = ensurePlayerProfile(playerName, teamId, false);
     renderTopPlayers();
     return data;
@@ -3917,10 +3987,12 @@
     const playersStore = getPlayers();
     const result = [];
     const seen = new Set();
+    const hiddenTopPlayers = new Set(getHiddenTopPlayers());
 
     Object.keys(users).forEach(key => {
       const user = users[key];
       if (!user || user.role !== ROLES.PLAYER || !user.username) return;
+      if (hiddenTopPlayers.has(String(user.username).toLowerCase())) return;
       const team = teams.find(t => String(t.id) === String(user.teamId));
       const data = ensurePlayerProfile(user.username, user.teamId || null, true);
       const unique = String(user.username).toLowerCase();
@@ -3934,6 +4006,7 @@
       const data = playersStore[key];
       if (!data || !data.name) return;
       const unique = String(data.name).toLowerCase();
+      if (hiddenTopPlayers.has(unique)) return;
       if (seen.has(unique)) return;
       const team = teams.find(t => String(t.id) === String(data.teamId));
       const isRosterPlayer = team && (team.roster || []).some(n => String(n).toLowerCase() === unique);
@@ -3945,6 +4018,7 @@
 
     teams.forEach(team => (team.roster || []).forEach(playerName => {
       const unique = String(playerName).toLowerCase();
+      if (hiddenTopPlayers.has(unique)) return;
       if (seen.has(unique)) return;
       const data = ensurePlayerProfile(playerName, team.id, true);
       seen.add(unique);
@@ -5877,6 +5951,17 @@
       const data = getPlayerData(editingPlayerTeamId, editingPlayerName);
       document.getElementById('editPlayerName').value = data.name;
       document.getElementById('editPlayerRole').value = data.role || 'Игрок';
+      const avatarInput = document.getElementById('editPlayerAvatarFile');
+      const avatarPreview = document.getElementById('editPlayerAvatarPreview');
+      const avatarPreviewImg = document.getElementById('editPlayerAvatarPreviewImg');
+      if (avatarInput) avatarInput.value = '';
+      const existingAvatar = getPlayerAvatarUrl(data.name);
+      if (avatarPreview && avatarPreviewImg && existingAvatar) {
+        avatarPreviewImg.src = existingAvatar;
+        avatarPreview.style.display = 'flex';
+      } else if (avatarPreview) {
+        avatarPreview.style.display = 'none';
+      }
       const teamSelect = document.getElementById('editPlayerTeam');
       const teams = getTeams();
       teamSelect.innerHTML = '<option value="">Без команды</option>' + teams.map(team => `<option value="${String(team.id).replace(/"/g,'&quot;')}">${escHtml(team.name)}</option>`).join('');
@@ -5889,8 +5974,33 @@
       document.getElementById('editPlayerBio').value = data.bio || '';
       openModal(document.getElementById('editPlayerModal'));
     });
-    document.getElementById('closeEditPlayerModal').addEventListener('click', () => closeModal(document.getElementById('editPlayerModal')));
-    document.getElementById('saveEditPlayerBtn').addEventListener('click', function() {
+    document.getElementById('closeEditPlayerModal').addEventListener('click', () => {
+      const avatarInput = document.getElementById('editPlayerAvatarFile');
+      const avatarPreview = document.getElementById('editPlayerAvatarPreview');
+      if (avatarInput) avatarInput.value = '';
+      if (avatarPreview) avatarPreview.style.display = 'none';
+      closeModal(document.getElementById('editPlayerModal'));
+    });
+    document.getElementById('editPlayerAvatarFile')?.addEventListener('change', function() {
+      const file = this.files?.[0];
+      const preview = document.getElementById('editPlayerAvatarPreview');
+      const img = document.getElementById('editPlayerAvatarPreviewImg');
+      if (!file || !file.type.startsWith('image/')) {
+        if (preview) preview.style.display = 'none';
+        return;
+      }
+      if (file.size > 5 * 1024 * 1024) {
+        showNotification('Ошибка', 'Аватар игрока не больше 5MB', 'fa-times-circle');
+        this.value = '';
+        if (preview) preview.style.display = 'none';
+        return;
+      }
+      if (img && preview) {
+        img.src = URL.createObjectURL(file);
+        preview.style.display = 'flex';
+      }
+    });
+    document.getElementById('saveEditPlayerBtn').addEventListener('click', async function() {
       const name = document.getElementById('editPlayerName').value.trim();
       if (!name) { showNotification('Ошибка', 'Введите имя игрока', 'fa-times-circle'); return; }
       const selectedTeamId = document.getElementById('editPlayerTeam').value || null;
@@ -5909,6 +6019,32 @@
         earnings:document.getElementById('editPlayerEarnings').value.trim() || '0 ₽',
         bio:document.getElementById('editPlayerBio').value.trim() || 'Биография игрока пока не заполнена.'
       };
+
+      const avatarFile = document.getElementById('editPlayerAvatarFile')?.files?.[0];
+      if (avatarFile) {
+        if (!avatarFile.type.startsWith('image/')) { showNotification('Ошибка', 'Аватар игрока должен быть изображением', 'fa-times-circle'); return; }
+        if (avatarFile.size > 5 * 1024 * 1024) { showNotification('Ошибка', 'Аватар игрока не больше 5MB', 'fa-times-circle'); return; }
+        try {
+          const uploaded = await ltlUploadMedia(avatarFile, 'avatars/' + ltlSafeFileName(String(name).toLowerCase()));
+          const oldAvatar = getPlayerAvatarUrl(oldName);
+          data.avatar_url = uploaded.url;
+          const usersForAvatar = getUsers();
+          const avatarOldKey = String(oldName).toLowerCase();
+          const avatarNewKey = String(name).toLowerCase();
+          const avatarUser = usersForAvatar[avatarOldKey] || usersForAvatar[avatarNewKey];
+          if (avatarUser) {
+            avatarUser.avatar_url = uploaded.url;
+            avatarUser.avatar = uploaded.url;
+            usersForAvatar[avatarNewKey] = avatarUser;
+            if (avatarOldKey !== avatarNewKey) delete usersForAvatar[avatarOldKey];
+            setUsers(usersForAvatar);
+          }
+          if (oldAvatar && oldAvatar !== uploaded.url && oldAvatar.indexOf('/storage/v1/object/public/' + LTL_MEDIA_BUCKET + '/') >= 0) ltlDeleteMediaUrl(oldAvatar);
+        } catch (err) {
+          showNotification('Ошибка загрузки', 'Не удалось загрузить аватар игрока: ' + err.message, 'fa-times-circle');
+          return;
+        }
+      }
 
       const teams = getTeams();
       teams.forEach(team => {
@@ -5936,6 +6072,10 @@
 
       editingPlayerName = name;
       editingPlayerTeamId = selectedTeamId;
+      const savedAvatarInput = document.getElementById('editPlayerAvatarFile');
+      const savedAvatarPreview = document.getElementById('editPlayerAvatarPreview');
+      if (savedAvatarInput) savedAvatarInput.value = '';
+      if (savedAvatarPreview) savedAvatarPreview.style.display = 'none';
       closeModal(document.getElementById('editPlayerModal'));
       forceRenderAll();
       window.showPlayerDetail(selectedTeamId, name, playerDetailOrigin);
