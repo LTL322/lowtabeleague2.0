@@ -647,7 +647,7 @@
     .profile-page .profile-avatar-big .avatar-overlay{position:absolute;bottom:0;right:0;background:var(--accent);color:#fff;border-radius:50%;width:32px;height:32px;display:flex;align-items:center;justify-content:center;font-size:14px;border:2px solid var(--bg);cursor:pointer;transition:all 0.3s}
     .profile-page .profile-avatar-big .avatar-overlay:hover{transform:scale(1.1)}
     .profile-page .profile-info h2{font-size:24px;font-weight:800;font-family:"Space Grotesk"}
-    .profile-page .profile-info .email{display:none}
+    .profile-page .profile-info .email{color:var(--muted);font-size:14px;font-weight:500;margin-top:4px}
     .profile-page .profile-stats{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:16px;margin-bottom:24px}
     .profile-page .stat-card{background:var(--bg2);border-radius:16px;padding:16px 20px;border:1px solid var(--line)}
     .profile-page .stat-card .num{font-size:28px;font-weight:800;color:var(--accent);font-family:"Space Grotesk"}
@@ -1201,14 +1201,25 @@
       .mobile-view .about-admin-panel .tab-bar .tab-btn{font-size:10px;padding:4px 8px;min-width:50px}
       .mobile-view .about-admin-panel .action-buttons button{font-size:11px;padding:6px 10px}
     }
-  </style>
+  
+/* LTL mobile readability: keep long text inside cards and viewport without changing desktop layout. */
+@media (max-width: 650px) {
+  html, body { max-width:100%; overflow-x:hidden; }
+  .content, .page, .card, .modal, .modal-overlay, .hero-main, .news-card, .team-card, .match-card,
+  .tournament, .rank-row, .kda-player, .roster-item, .top-player-card, .upcoming-card { max-width:100%; min-width:0; box-sizing:border-box; }
+  .hero-main h1, .hero-main p, .section-head h2, .team-card strong, .team-detail-info h2,
+  .player-detail-page h2, .team-description p, .modal h2, .modal .sub, .match-teams,
+  .match-info-grid, .value, .label { white-space:normal; overflow-wrap:anywhere; word-break:break-word; line-height:1.25; }
+  .teams, .match-teams, .team-detail-header, .match-header, .rank-row, .roster-item { flex-wrap:wrap; min-width:0; }
+  .match-teams { justify-content:center; text-align:center; gap:8px; }
+  .team-card strong { display:block; }
+  .modal input, .modal textarea, .modal select { max-width:100%; width:100%; box-sizing:border-box; }
+  .table-wrap, .matches-table-wrap, .bracket-container { max-width:100%; overflow-x:auto; }
+}
 
-  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 64 64%22%3E%3Crect width=%2264%22 height=%2264%22 rx=%2214%22 fill=%22%23111111%22/%3E%3Ctext x=%2232%22 y=%2241%22 text-anchor=%22middle%22 font-family=%22Arial,sans-serif%22 font-size=%2228%22 font-weight=%22700%22 fill=%22white%22%3ELTL%3C/text%3E%3C/svg%3E">
-  <meta name="theme-color" content="#111111">
-
+</style>
 </head>
 <body>
-<!-- LTL_AVATAR_TEAM_UI_V10 -->
 
 <!-- Фоновые тексты -->
 <div class="bg-texts">
@@ -1361,7 +1372,7 @@
           <div class="hero-main">
             <div class="eyebrow" id="nextMatchLabel">Следующий матч</div>
             <h1 id="nextMatchTitle">Загрузка...</h1>
-            <!-- hero-copy removed by request -->
+            <p class="hero-copy" id="heroText">Добро пожаловать в LTL | LOW TABE LEAGUE — главную киберспортивную платформу! Следите за матчами, турнирами и новостями.</p>
             <div class="match" id="nextMatchTeams">
               <span class="team-pill" id="nextTeamA">—</span>
               <span class="vs">VS</span>
@@ -1832,6 +1843,7 @@
             </div>
             <div class="profile-info">
               <h2 id="profileFullName">Пользователь</h2>
+              
               <div style="margin-top:8px;">
                 <span class="role-badge guest" id="profileRoleBadge">Гость</span>
                 <span style="color:var(--muted); font-size:13px; margin-left:12px;">На сайте с 2026 года</span>
@@ -1903,7 +1915,7 @@
     <div class="sub">Создайте аккаунт</div>
     <label>Никнейм</label>
     <input type="text" id="regNick" placeholder="Придумайте никнейм">
-    <label>Пароль</label>
+<label>Пароль</label>
     <div class="password-wrapper">
       <input type="password" id="regPassword" placeholder="Придумайте пароль (мин. 8 символов)">
       <button class="toggle-password" id="toggleRegPass" type="button">
@@ -2047,10 +2059,10 @@
     <label>Регион</label>
     <input type="text" id="newTeamRegion" placeholder="🇪🇺 Европа">
     <label>Краткое название команды (до 5 букв)</label>
-    <input type="text" id="newTeamIcon" placeholder="TL" maxlength="5" inputmode="text" autocomplete="off">
-    <label>Аватар команды</label>
+    <input type="text" id="newTeamIcon" placeholder="LTL" maxlength="5" autocomplete="off">
+    <label>Аватар / логотип команды</label>
     <input type="file" id="newTeamAvatarFile" accept="image/*">
-    <div style="font-size:12px;color:var(--muted);margin-top:4px;">PNG/JPG/WebP, до 5MB. Аватар будет виден всем.</div>
+    <div style="font-size:12px;color:var(--muted);margin-top:4px;">PNG, JPG, GIF, WEBP — до 5MB. Логотип будет виден всем.</div>
     <label>Описание команды</label>
     <textarea id="newTeamDesc" placeholder="Краткое описание команды..."></textarea>
     <label>Состав (игроки через запятую)</label>
@@ -2076,10 +2088,10 @@
     <label>Регион</label>
     <input type="text" id="editTeamRegion" placeholder="🇪🇺 Европа">
     <label>Краткое название команды (до 5 букв)</label>
-    <input type="text" id="editTeamIcon" placeholder="TL" maxlength="5" inputmode="text" autocomplete="off">
-    <label>Аватар команды</label>
+    <input type="text" id="editTeamIcon" placeholder="LTL" maxlength="5" autocomplete="off">
+    <label>Аватар / логотип команды</label>
     <input type="file" id="editTeamAvatarFile" accept="image/*">
-    <div style="font-size:12px;color:var(--muted);margin-top:4px;">Оставьте пустым, чтобы сохранить текущий аватар.</div>
+    <div style="font-size:12px;color:var(--muted);margin-top:4px;">Оставьте пустым, чтобы сохранить текущий логотип.</div>
     <label>Описание команды</label>
     <textarea id="editTeamDesc" placeholder="Описание команды..."></textarea>
     <label>Состав (игроки через запятую)</label>
@@ -2540,39 +2552,6 @@
     }
   }
 
-  // Защита краткого названия команды: максимум 5 символов даже при вставке/программном вводе.
-  function ltlLimitTeamShortNameInput(id) {
-    const el = document.getElementById(id);
-    if (!el || el.dataset.ltlShortLimitBound) return;
-    el.dataset.ltlShortLimitBound = '1';
-    const limit = () => { el.value = String(el.value || '').slice(0, 5); };
-    el.addEventListener('input', limit);
-    el.addEventListener('change', limit);
-    limit();
-  }
-  document.addEventListener('DOMContentLoaded', () => {
-    ltlLimitTeamShortNameInput('newTeamIcon');
-    ltlLimitTeamShortNameInput('editTeamIcon');
-  });
-
-  function ltlNormalizeTeams() {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEYS.TEAMS);
-      if (!raw) return;
-      const teams = JSON.parse(raw);
-      if (!Array.isArray(teams)) return;
-      let changed = false;
-      teams.forEach(t => {
-        if (t && typeof t === 'object' && typeof t.shortName === 'string' && t.shortName.length > 5) {
-          t.shortName = t.shortName.slice(0, 5);
-          changed = true;
-        }
-      });
-      if (changed) localStorage.setItem(STORAGE_KEYS.TEAMS, JSON.stringify(teams));
-    } catch (_) {}
-  }
-  ltlNormalizeTeams();
-
   // ===== ОБЩИЙ ОНЛАЙН ЧЕРЕЗ SUPABASE REALTIME PRESENCE =====
   let ltlClientId = sessionStorage.getItem('ltl_client_id');
   if (!ltlClientId) {
@@ -2790,7 +2769,7 @@
   function setNews(news) { localStorage.setItem(STORAGE_KEYS.NEWS, JSON.stringify(news)); }
   function getMatches() { return JSON.parse(localStorage.getItem(STORAGE_KEYS.MATCHES)) || []; }
   function setMatches(matches) { localStorage.setItem(STORAGE_KEYS.MATCHES, JSON.stringify(matches)); }
-  function getTeams() { const teams = JSON.parse(localStorage.getItem(STORAGE_KEYS.TEAMS)) || []; return teams.map(t => { if (t && !t.shortName) t.shortName = String(t.icon || t.name || '').replace(/\s+/g,'').slice(0,5).toUpperCase(); if (t && t.shortName) t.shortName = String(t.shortName).replace(/\s+/g,'').slice(0,5).toUpperCase(); return t; }); }
+  function getTeams() { return JSON.parse(localStorage.getItem(STORAGE_KEYS.TEAMS)) || []; }
   function setTeams(teams) { localStorage.setItem(STORAGE_KEYS.TEAMS, JSON.stringify(teams)); }
   function getPlayers() { return JSON.parse(localStorage.getItem(STORAGE_KEYS.PLAYERS)) || {}; }
   function setPlayers(players) { localStorage.setItem(STORAGE_KEYS.PLAYERS, JSON.stringify(players)); }
@@ -2850,6 +2829,7 @@
     document.getElementById('profileRole').textContent = ROLE_NAMES[role] || 'Гость';
     document.getElementById('profileRole').className = 'role-badge ' + (ROLE_CLASSES[role] || 'guest');
     document.getElementById('profileFullName').textContent = username;
+    const profileEmailEl = document.getElementById('profileEmail'); if (profileEmailEl) profileEmailEl.textContent = '';
     document.getElementById('profileRoleBadge').textContent = ROLE_NAMES[role] || 'Гость';
     document.getElementById('profileRoleBadge').className = 'role-badge ' + (ROLE_CLASSES[role] || 'guest');
     
@@ -3433,7 +3413,7 @@
     const grid = document.getElementById('teamsGrid');
     grid.innerHTML = teams.map(t => `
       <div class="card team-card" data-team-id="${t.id}" onclick="window.showTeamDetail('${t.id}')">
-        <div class="team-icon">${t.avatar ? `<img src="${t.avatar}" style="width:62px;height:62px;border-radius:18px;object-fit:cover;">` : (t.shortName || t.icon)}</div>
+        <div class="team-icon">${t.avatar ? `<img src="${t.avatar}" style="width:62px;height:62px;border-radius:18px;object-fit:cover;">` : t.icon}</div>
         <strong>${t.name}</strong>
         <small>${t.region}</small>
         <div style="margin-top:6px;font-size:13px;color:var(--accent);font-weight:700;">⭐ ${t.points || 0}</div>
@@ -4098,7 +4078,7 @@
     const team = getTeams().find(t => t.id === teamId);
     if (!team) return;
     editingTeamId = teamId;
-    document.getElementById('teamDetailIcon').innerHTML = team.avatar ? `<img src="${team.avatar}" alt="${team.name}">` : (team.shortName || team.icon);
+    document.getElementById('teamDetailIcon').innerHTML = team.avatar ? `<img src="${team.avatar}" alt="${team.name}">` : team.icon;
     document.getElementById('teamDetailName').textContent = team.name;
     document.getElementById('teamDetailRegion').textContent = team.region;
     document.getElementById('teamDescription').textContent = team.description || 'Описание отсутствует.';
@@ -4548,6 +4528,7 @@
     // Регистрация
     document.getElementById('registerSubmit').addEventListener('click', function() {
       const nick = document.getElementById('regNick').value.trim();
+      const email = nick ? (nick.toLowerCase().replace(/[^a-z0-9._-]+/g, '') + '@ltl.local') : '';
       const password = document.getElementById('regPassword').value.trim();
       const confirmPass = document.getElementById('regConfirmPassword').value.trim();
       const error = document.getElementById('registerError');
@@ -4574,7 +4555,7 @@
       const userKey = nick.toLowerCase();
       if (users[userKey]) { error.textContent = 'Аккаунт с таким ником уже существует'; error.classList.add('show'); return; }
       
-      users[userKey] = { username: nick, password: password, role: ROLES.GUEST, createdAt: new Date().toISOString(), avatar: null };
+      users[userKey] = { username: nick, email: email, password: password, role: ROLES.GUEST, createdAt: new Date().toISOString(), avatar: null };
       setUsers(users);
       loginUser(nick, ROLES.GUEST);
       closeModal(document.getElementById('registerModal'));
@@ -4713,54 +4694,54 @@
       });
     });
 
-    ['newTeamIcon','editTeamIcon'].forEach(id => {
+    // Короткое название команды: максимум 5 символов, включая вставку из буфера.
+    ['newTeamIcon','editTeamIcon'].forEach(function(id) {
       const el = document.getElementById(id);
-      if (el) el.addEventListener('input', function(){ this.value = this.value.replace(/\s+/g,'').slice(0,5).toUpperCase(); });
+      if (!el) return;
+      el.setAttribute('maxlength', '5');
+      el.addEventListener('input', function() { this.value = this.value.slice(0, 5).toUpperCase(); });
     });
 
     // Кнопки создания
     document.getElementById('createTeamBtn').addEventListener('click', function() {
       openModal(document.getElementById('createTeamModal'));
     });
-    document.getElementById('closeCreateTeamModal').addEventListener('click', () => closeModal(document.getElementById('createTeamModal')));
+    document.getElementById('closeCreateTeamModal').addEventListener('click', () => { document.getElementById('newTeamAvatarFile').value=''; closeModal(document.getElementById('createTeamModal')); });
     document.getElementById('saveTeamBtn').addEventListener('click', async function() {
       const name = document.getElementById('newTeamName').value.trim();
       if (!name) { showNotification('Ошибка', 'Введите название команды', 'fa-times-circle'); return; }
-      const shortName = (document.getElementById('newTeamIcon').value || '').replace(/\s+/g, '').slice(0, 5).toUpperCase();
-      const avatarFile = document.getElementById('newTeamAvatarFile').files[0];
+      const teams = getTeams();
+      const newTeam = {
+        id: 'team_' + Date.now(),
+        name: name,
+        region: document.getElementById('newTeamRegion').value.trim() || 'Не указан',
+        icon: document.getElementById('newTeamIcon').value.trim().toUpperCase().slice(0, 5) || name.substring(0, 5).toUpperCase(),
+        description: document.getElementById('newTeamDesc').value.trim() || 'Новая команда на платформе.',
+        roster: document.getElementById('newTeamRoster').value.trim().split(',').map(s => s.trim()).filter(Boolean) || ['Игрок 1', 'Игрок 2', 'Игрок 3'],
+        wins: parseInt(document.getElementById('newTeamWins').value) || 0,
+        losses: parseInt(document.getElementById('newTeamLosses').value) || 0,
+        prize: document.getElementById('newTeamPrize').value.trim() || '0 ₽',
+        points: 0,
+        avatar: null
+      };
+      const avatarFile = document.getElementById('newTeamAvatarFile')?.files?.[0];
       if (avatarFile) {
         if (!avatarFile.type.startsWith('image/')) { showNotification('Ошибка', 'Аватар команды должен быть изображением', 'fa-times-circle'); return; }
-        if (avatarFile.size > 5 * 1024 * 1024) { showNotification('Ошибка', 'Аватар команды: максимум 5MB', 'fa-times-circle'); return; }
-      }
-      const btn = this; btn.disabled = true; const oldText = btn.textContent; btn.textContent = avatarFile ? 'Загрузка команды...' : 'Создание...';
-      try {
-        const id = 'team_' + Date.now();
-        let avatar = null;
-        if (avatarFile) {
-          if (!ltlHasSupabaseStorage()) throw new Error('Supabase Storage не настроен');
-          const uploaded = await ltlUploadMedia(avatarFile, 'teams/' + ltlSafeFileName(id));
-          avatar = uploaded.url;
+        if (avatarFile.size > 5 * 1024 * 1024) { showNotification('Ошибка', 'Аватар команды не больше 5MB', 'fa-times-circle'); return; }
+        try {
+          const uploaded = await ltlUploadMedia(avatarFile, 'teams/' + ltlSafeFileName(newTeam.id));
+          newTeam.avatar = uploaded.url;
+        } catch (err) {
+          showNotification('Ошибка загрузки', 'Не удалось загрузить аватар команды: ' + err.message, 'fa-times-circle');
+          return;
         }
-        const teams = getTeams();
-        const newTeam = {
-          id, name: name,
-          region: document.getElementById('newTeamRegion').value.trim() || 'Не указан',
-          icon: shortName || name.substring(0, 2).toUpperCase(),
-          shortName: shortName || name.substring(0, 2).toUpperCase(),
-          description: document.getElementById('newTeamDesc').value.trim() || 'Новая команда на платформе.',
-          roster: document.getElementById('newTeamRoster').value.trim().split(',').map(s => s.trim()).filter(Boolean) || ['Игрок 1', 'Игрок 2', 'Игрок 3'],
-          wins: parseInt(document.getElementById('newTeamWins').value) || 0,
-          losses: parseInt(document.getElementById('newTeamLosses').value) || 0,
-          prize: document.getElementById('newTeamPrize').value.trim() || '0 ₽',
-          points: 0, avatar
-        };
-        teams.push(newTeam); setTeams(teams); forceRenderAll();
-        document.getElementById('newTeamAvatarFile').value = '';
-        closeModal(document.getElementById('createTeamModal'));
-        showNotification('Команда создана!', name, 'fa-users');
-      } catch (err) {
-        showNotification('Ошибка', 'Не удалось создать команду: ' + err.message, 'fa-times-circle');
-      } finally { btn.disabled = false; btn.textContent = oldText; }
+      }
+      teams.push(newTeam);
+      setTeams(teams);
+      forceRenderAll();
+      document.getElementById('newTeamAvatarFile').value = '';
+      closeModal(document.getElementById('createTeamModal'));
+      showNotification('Команда создана!', name, 'fa-users');
     });
 
     // Навигация назад
@@ -5450,8 +5431,7 @@
       if (!team) return;
       document.getElementById('editTeamName').value = team.name;
       document.getElementById('editTeamRegion').value = team.region || '';
-      document.getElementById('editTeamIcon').value = team.shortName || team.icon || '';
-      document.getElementById('editTeamAvatarFile').value = '';
+      document.getElementById('editTeamIcon').value = team.icon;
       document.getElementById('editTeamDesc').value = team.description || '';
       document.getElementById('editTeamRoster').value = team.roster ? team.roster.join(', ') : '';
       document.getElementById('editTeamWins').value = team.wins || 0;
@@ -5459,42 +5439,40 @@
       document.getElementById('editTeamPrize').value = team.prize || '0 ₽';
       openModal(document.getElementById('editTeamModal'));
     });
-    document.getElementById('closeEditTeamModal').addEventListener('click', () => closeModal(document.getElementById('editTeamModal')));
+    document.getElementById('closeEditTeamModal').addEventListener('click', () => { const f=document.getElementById('editTeamAvatarFile'); if(f) f.value=''; closeModal(document.getElementById('editTeamModal')); });
     document.getElementById('saveEditTeamBtn').addEventListener('click', async function() {
       const name = document.getElementById('editTeamName').value.trim();
       if (!name) { showNotification('Ошибка', 'Введите название команды', 'fa-times-circle'); return; }
-      const shortName = (document.getElementById('editTeamIcon').value || '').replace(/\s+/g, '').slice(0, 5).toUpperCase();
-      const avatarFile = document.getElementById('editTeamAvatarFile').files[0];
-      if (avatarFile) {
-        if (!avatarFile.type.startsWith('image/')) { showNotification('Ошибка', 'Аватар команды должен быть изображением', 'fa-times-circle'); return; }
-        if (avatarFile.size > 5 * 1024 * 1024) { showNotification('Ошибка', 'Аватар команды: максимум 5MB', 'fa-times-circle'); return; }
-      }
-      const btn = this; btn.disabled = true; const oldText = btn.textContent; btn.textContent = avatarFile ? 'Загрузка...' : 'Сохранение...';
-      try {
-        const teams = getTeams(); const team = teams.find(t => t.id === editingTeamId); if (!team) throw new Error('Команда не найдена');
-        const oldAvatar = team.avatar;
-        team.name = name;
-        team.region = document.getElementById('editTeamRegion').value.trim() || 'Не указан';
-        team.icon = shortName || name.substring(0, 2).toUpperCase();
-        team.shortName = shortName || name.substring(0, 2).toUpperCase();
-        team.description = document.getElementById('editTeamDesc').value.trim() || 'Описание отсутствует.';
-        team.roster = document.getElementById('editTeamRoster').value.trim().split(',').map(s => s.trim()).filter(Boolean) || ['Игрок 1', 'Игрок 2', 'Игрок 3'];
-        team.wins = parseInt(document.getElementById('editTeamWins').value) || 0;
-        team.losses = parseInt(document.getElementById('editTeamLosses').value) || 0;
-        team.prize = document.getElementById('editTeamPrize').value.trim() || '0 ₽';
-        if (avatarFile) {
-          if (!ltlHasSupabaseStorage()) throw new Error('Supabase Storage не настроен');
-          const uploaded = await ltlUploadMedia(avatarFile, 'teams/' + ltlSafeFileName(team.id || team.name));
+      const teams = getTeams();
+      const team = teams.find(t => t.id === editingTeamId);
+      if (!team) return;
+      team.name = name;
+      team.region = document.getElementById('editTeamRegion').value.trim() || 'Не указан';
+      team.icon = document.getElementById('editTeamIcon').value.trim().toUpperCase().slice(0, 5) || name.substring(0, 5).toUpperCase();
+      team.description = document.getElementById('editTeamDesc').value.trim() || 'Описание отсутствует.';
+      team.roster = document.getElementById('editTeamRoster').value.trim().split(',').map(s => s.trim()).filter(Boolean) || ['Игрок 1', 'Игрок 2', 'Игрок 3'];
+      team.wins = parseInt(document.getElementById('editTeamWins').value) || 0;
+      team.losses = parseInt(document.getElementById('editTeamLosses').value) || 0;
+      team.prize = document.getElementById('editTeamPrize').value.trim() || '0 ₽';
+      const editAvatarFile = document.getElementById('editTeamAvatarFile')?.files?.[0];
+      if (editAvatarFile) {
+        if (!editAvatarFile.type.startsWith('image/')) { showNotification('Ошибка', 'Аватар команды должен быть изображением', 'fa-times-circle'); return; }
+        if (editAvatarFile.size > 5 * 1024 * 1024) { showNotification('Ошибка', 'Аватар команды не больше 5MB', 'fa-times-circle'); return; }
+        try {
+          const oldAvatar = team.avatar;
+          const uploaded = await ltlUploadMedia(editAvatarFile, 'teams/' + ltlSafeFileName(team.id || team.name));
           team.avatar = uploaded.url;
+          if (oldAvatar && oldAvatar !== uploaded.url && oldAvatar.indexOf('/storage/v1/object/public/' + LTL_MEDIA_BUCKET + '/') >= 0) ltlDeleteMediaUrl(oldAvatar);
+        } catch (err) {
+          showNotification('Ошибка загрузки', 'Не удалось загрузить аватар команды: ' + err.message, 'fa-times-circle');
+          return;
         }
-        setTeams(teams);
-        if (avatarFile && oldAvatar && oldAvatar.indexOf('/storage/v1/object/public/' + LTL_MEDIA_BUCKET + '/') >= 0 && oldAvatar !== team.avatar) ltlDeleteMediaUrl(oldAvatar);
-        document.getElementById('editTeamAvatarFile').value = '';
-        forceRenderAll(); closeModal(document.getElementById('editTeamModal')); window.showTeamDetail(editingTeamId);
-        showNotification('Команда обновлена!', name, 'fa-edit');
-      } catch (err) {
-        showNotification('Ошибка', 'Не удалось сохранить команду: ' + err.message, 'fa-times-circle');
-      } finally { btn.disabled = false; btn.textContent = oldText; }
+      }
+      setTeams(teams);
+      forceRenderAll();
+      closeModal(document.getElementById('editTeamModal'));
+      window.showTeamDetail(editingTeamId);
+      showNotification('Команда обновлена!', name, 'fa-edit');
     });
     document.getElementById('deleteTeamBtn').addEventListener('click', function() {
       showConfirm('Удаление команды', 'Вы уверены, что хотите удалить эту команду?', function() {
